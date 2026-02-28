@@ -12,7 +12,7 @@ export default function JoinPage() {
       </p>
 
       <div style={{ marginTop: 30 }}>
-        <Link href="/sign-up">
+        <Link href="/join">
           <button
             style={{
               padding: "14px 28px",
