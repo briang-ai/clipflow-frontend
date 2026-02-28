@@ -30,7 +30,7 @@ async function handleUpload() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: user.id,
+        user_id: user?.id,
         original_filename: file.name,
         content_type: file.type || "application/octet-stream",
       }),
