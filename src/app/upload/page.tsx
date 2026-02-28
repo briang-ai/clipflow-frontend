@@ -11,7 +11,16 @@ export default function UploadPage() {
   if (!isLoaded) return <div style={{ padding: 24 }}>Loading…</div>;
   if (!isSignedIn) return <div style={{ padding: 24 }}>Please sign in first.</div>;
 
- async function handleUpload() {
+  if (!isLoaded) {
+    setStatus("Loading user…");
+    return;
+  }
+  if (!isSignedIn || !user) {
+    setStatus("Please sign in before uploading.");
+    return;
+  }
+ 
+async function handleUpload() {
   if (!file) return;
 
   try {
