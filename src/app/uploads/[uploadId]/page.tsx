@@ -20,7 +20,7 @@ export default function UploadDetailPage() {
   const uploadId = String(params.uploadId);
 
   const [clips, setClips] = useState<ClipRow[]>([]);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string>("");
 
   useEffect(() => {
     async function load() {
