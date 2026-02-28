@@ -22,6 +22,24 @@ export default function UploadDetailPage() {
   const [clips, setClips] = useState<ClipRow[]>([]);
   const [error, setError] = useState<string>("");
 
+async function downloadClip(clipId: string) {
+  try {
+    const res = await fetch(`http://127.0.0.1:8000/api/clips/${clipId}/download`);
+    if (!res.ok) {
+      setError(await res.text());
+      return;
+    }
+    const data = await res.json();
+    if (!data?.download_url) {
+      setError("No download_url returned: " + JSON.stringify(data));
+      return;
+    }
+    window.open(data.download_url, "_blank");
+  } catch (e: any) {
+    setError(String(e));
+  }
+}
+
   useEffect(() => {
     async function load() {
       try {
@@ -73,20 +91,3 @@ export default function UploadDetailPage() {
   );
 }
 
-async function downloadClip(clipId: string) {
-  try {
-    const res = await fetch(`http://127.0.0.1:8000/api/clips/${clipId}/download`);
-    if (!res.ok) {
-      setError(await res.text());
-      return;
-    }
-    const data = await res.json();
-    if (!data?.download_url) {
-      setError("No download_url returned: " + JSON.stringify(data));
-      return;
-    }
-    window.open(data.download_url, "_blank");
-  } catch (e: any) {
-    setError(String(e));
-  }
-}
