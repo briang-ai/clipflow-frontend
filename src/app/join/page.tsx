@@ -77,7 +77,7 @@ export default function JoinPage() {
           <div className="lt">ClipFlow</div>
         </div>
 
-        <div className="badge">Westside Little League · Early Access</div>
+        <div className="badge">Scottsdale Little League · Early Access</div>
 
         <h1>
           Game video to
