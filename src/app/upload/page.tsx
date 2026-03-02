@@ -27,7 +27,7 @@ async function handleUpload() {
   try {
     setStatus("Requesting upload link…");
 
-    const res = await fetch('${API_BASE}/api/uploads/create', {
+    const res = await fetch(`${API_BASE}/api/uploads/create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -73,7 +73,7 @@ async function handleUpload() {
 
     setStatus("Finalizing…");
 
-    const completeRes = await fetch('${API_BASE}/api/uploads/complete', {
+    const completeRes = await fetch(`${API_BASE}/api/uploads/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ upload_id: data.upload_id }),
