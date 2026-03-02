@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
+import { API_BASE } from "@/lib/api";
 
 export default function UploadPage() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -26,7 +27,7 @@ async function handleUpload() {
   try {
     setStatus("Requesting upload link…");
 
-    const res = await fetch("http://127.0.0.1:8000/api/uploads/create", {
+    const res = await fetch("http://'${API_BASE}/api/uploads/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -72,7 +73,7 @@ async function handleUpload() {
 
     setStatus("Finalizing…");
 
-    const completeRes = await fetch("http://127.0.0.1:8000/api/uploads/complete", {
+    const completeRes = await fetch("http://'${API_BASE}/api/uploads/complete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ upload_id: data.upload_id }),
