@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
+import { API_BASE } from "@/lib/api";
 
 type ClipRow = {
   id: string;
@@ -11,6 +12,8 @@ type ClipRow = {
   bucket: string;
   s3_key: string;
   label: string;
+  player_name?: string | null;
+  jersey_number?: string | null;
   created_at: string;
 };
 
@@ -21,68 +24,136 @@ export default function UploadDetailPage() {
 
   const [clips, setClips] = useState<ClipRow[]>([]);
   const [error, setError] = useState<string>("");
+  const [savingId, setSavingId] = useState<string>("");
 
-async function downloadClip(clipId: string) {
-  try {
-    const res = await fetch(`http://127.0.0.1:8000/api/clips/${clipId}/download`);
-    if (!res.ok) {
-      setError(await res.text());
-      return;
-    }
-    const data = await res.json();
-    if (!data?.download_url) {
-      setError("No download_url returned: " + JSON.stringify(data));
-      return;
-    }
-    window.open(data.download_url, "_blank");
-  } catch (e: any) {
-    setError(String(e));
-  }
-}
+  const [draft, setDraft] = useState<
+    Record<string, { player_name: string; jersey_number: string }>
+  >({});
 
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/uploads/${uploadId}/clips`);
+        setError("");
+        const res = await fetch(
+          `${API_BASE}/api/uploads/${uploadId}/clips`,
+          { cache: "no-store" }
+        );
+
         if (!res.ok) {
           setError(await res.text());
           return;
         }
+
         const data = await res.json();
-        setClips(data.clips ?? []);
+        const newClips: ClipRow[] = data.clips ?? [];
+        setClips(newClips);
+
+        const nextDraft: Record<
+          string,
+          { player_name: string; jersey_number: string }
+        > = {};
+
+        for (const c of newClips) {
+          nextDraft[c.id] = {
+            player_name: c.player_name ?? "",
+            jersey_number: c.jersey_number ?? "",
+          };
+        }
+
+        setDraft(nextDraft);
       } catch (e: any) {
         setError(String(e));
       }
     }
+
     if (uploadId) load();
   }, [uploadId]);
+
+  async function saveLabels(clipId: string) {
+    try {
+      setSavingId(clipId);
+      const payload = draft[clipId];
+
+      const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        setError(await res.text());
+      }
+    } catch (e: any) {
+      setError(String(e));
+    } finally {
+      setSavingId("");
+    }
+  }
 
   if (!isLoaded) return <div style={{ padding: 24 }}>Loading…</div>;
   if (!isSignedIn) return <div style={{ padding: 24 }}>Please sign in.</div>;
 
   return (
     <div style={{ padding: 24 }}>
-      <p>
-        <Link href="/uploads">← Back to uploads</Link>
-      </p>
-      <h1>Upload</h1>
-      <p style={{ opacity: 0.8 }}>{uploadId}</p>
+      <Link href="/uploads">← Back to uploads</Link>
 
-      {error && <pre style={{ whiteSpace: "pre-wrap" }}>{error}</pre>}
+      <h1 style={{ marginTop: 12 }}>Clips</h1>
 
-      <h2>Clips</h2>
+      {error && <pre style={{ color: "red" }}>{error}</pre>}
+
       {clips.length === 0 ? (
-        <p>No clips found yet.</p>
+        <p>No clips yet.</p>
       ) : (
-        <ul>
+        <ul style={{ listStyle: "none", padding: 0 }}>
           {clips.map((c) => (
-            <li key={c.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <strong>{c.label}</strong>
-                <button onClick={() => downloadClip(c.id)}>Download</button>
+            <li
+              key={c.id}
+              style={{
+                border: "1px solid #333",
+                padding: 12,
+                borderRadius: 8,
+                marginBottom: 12,
+              }}
+            >
+              <strong>{c.label}</strong>
+
+              <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+                <input
+                  placeholder="Player name"
+                  value={draft[c.id]?.player_name || ""}
+                  onChange={(e) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      [c.id]: {
+                        ...prev[c.id],
+                        player_name: e.target.value,
+                      },
+                    }))
+                  }
+                />
+
+                <input
+                  placeholder="Jersey #"
+                  value={draft[c.id]?.jersey_number || ""}
+                  onChange={(e) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      [c.id]: {
+                        ...prev[c.id],
+                        jersey_number: e.target.value,
+                      },
+                    }))
+                  }
+                  style={{ width: 100 }}
+                />
+
+                <button
+                  onClick={() => saveLabels(c.id)}
+                  disabled={savingId === c.id}
+                >
+                  {savingId === c.id ? "Saving..." : "Save"}
+                </button>
               </div>
-              <div style={{ fontFamily: "monospace" }}>{c.s3_key}</div>
-              <div>{new Date(c.created_at).toLocaleString()}</div>
             </li>
           ))}
         </ul>
@@ -90,4 +161,3 @@ async function downloadClip(clipId: string) {
     </div>
   );
 }
-
