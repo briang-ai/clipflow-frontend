@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 export default function UploadPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<string>("");
+  const router = useRouter();
 
   if (!isLoaded) return <div style={{ padding: 24 }}>Loading…</div>;
   if (!isSignedIn) return <div style={{ padding: 24 }}>Please sign in first.</div>;
@@ -77,7 +79,11 @@ async function handleUpload() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ upload_id: data.upload_id }),
+        upload_id: uploadId
+      }),
     });
+
+router .push("/uploads");
 
     if (!completeRes.ok) {
       setStatus("Finalize failed: " + (await completeRes.text()));
