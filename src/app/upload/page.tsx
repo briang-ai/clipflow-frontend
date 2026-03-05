@@ -79,8 +79,6 @@ async function handleUpload() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ upload_id: data.upload_id }),
-        upload_id: uploadId
-      }),
     });
 
 router .push("/uploads");
