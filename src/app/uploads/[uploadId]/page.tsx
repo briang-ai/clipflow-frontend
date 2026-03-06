@@ -60,22 +60,14 @@ export default function UploadDetailPage() {
     }
   }
 
-  useEffect(() => {
-    if (uploadId) loadClips();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadId]);
+useEffect(() => {
+  let timer: any = null;
 
-  async function saveLabels(clipId: string) {
+  async function load() {
     try {
       setError("");
-      setSavingId(clipId);
-
-      const payload = draft[clipId] ?? { player_name: "", jersey_number: "" };
-
-      const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
+        cache: "no-store",
       });
 
       if (!res.ok) {
@@ -83,14 +75,34 @@ export default function UploadDetailPage() {
         return;
       }
 
-      // Reload to reflect saved values from DB (optional but nice)
-      await loadClips();
+      const data = await res.json();
+      const newClips: ClipRow[] = data.clips ?? [];
+      setClips(newClips);
+
+      const nextDraft: Record<string, { player_name: string; jersey_number: string }> = {};
+      for (const c of newClips) {
+        nextDraft[c.id] = {
+          player_name: c.player_name ?? "",
+          jersey_number: c.jersey_number ?? "",
+        };
+      }
+      setDraft(nextDraft);
+
+      // if no clips yet, keep polling
+      if (newClips.length === 0) {
+        if (!timer) timer = setTimeout(load, 2000);
+      }
     } catch (e: any) {
       setError(String(e));
-    } finally {
-      setSavingId("");
     }
   }
+
+  if (uploadId) load();
+
+  return () => {
+    if (timer) clearTimeout(timer);
+  };
+}, [uploadId]);
 
   async function openClip(clipId: string) {
     try {
