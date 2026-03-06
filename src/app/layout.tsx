@@ -9,14 +9,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider
-      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      signInFallbackRedirectUrl="/uploads"
-      signUpFallbackRedirectUrl="/uploads"
-    >
-      <html lang="en">
-        <body>{children}</body>
-      </html>
-    </ClerkProvider>
+    <html lang="en">
+      <body>
+        <ClerkProvider
+          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+          signInFallbackRedirectUrl="/uploads"
+          signUpFallbackRedirectUrl="/uploads"
+        >
+          {children}
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }
