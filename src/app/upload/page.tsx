@@ -85,7 +85,7 @@ export default function UploadPage() {
       }
 
       setStatus("Upload complete ✅ Redirecting…");
-      router.push("/uploads");
+      router.push(`/uploads/${data.upload_id}`);
     } catch (e: any) {
       setStatus("Network/JS error: " + String(e));
     }
