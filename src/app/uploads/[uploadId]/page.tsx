@@ -61,22 +61,29 @@ export default function UploadDetailPage() {
   }
 
 useEffect(() => {
-  let timer: any = null;
+  let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
-  async function load() {
+  async function poll() {
     try {
+      if (cancelled) return;
+
       setError("");
+
       const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
         cache: "no-store",
       });
 
       if (!res.ok) {
-        setError(await res.text());
+        if (!cancelled) setError(await res.text());
         return;
       }
 
       const data = await res.json();
       const newClips: ClipRow[] = data.clips ?? [];
+
+      if (cancelled) return;
+
       setClips(newClips);
 
       const nextDraft: Record<string, { player_name: string; jersey_number: string }> = {};
@@ -88,18 +95,21 @@ useEffect(() => {
       }
       setDraft(nextDraft);
 
-      // if no clips yet, keep polling
-      if (newClips.length === 0) {
-        if (!timer) timer = setTimeout(load, 2000);
+      // keep polling until clips appear
+      if (newClips.length === 0 && !cancelled) {
+        timer = setTimeout(poll, 2000);
       }
     } catch (e: any) {
-      setError(String(e));
+      if (!cancelled) setError(String(e));
     }
   }
 
-  if (uploadId) load();
+  if (uploadId) {
+    poll();
+  }
 
   return () => {
+    cancelled = true;
     if (timer) clearTimeout(timer);
   };
 }, [uploadId]);
