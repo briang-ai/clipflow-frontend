@@ -31,11 +31,82 @@ export default function UploadDetailPage() {
     Record<string, { player_name: string; jersey_number: string }>
   >({});
 
-  async function loadClips() {
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    async function poll() {
+      try {
+        if (cancelled) return;
+
+        setError("");
+
+        const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          if (!cancelled) {
+            setError(await res.text());
+          }
+          return;
+        }
+
+        const data = await res.json();
+        const newClips: ClipRow[] = data.clips ?? [];
+
+        if (cancelled) return;
+
+        setClips(newClips);
+
+        setDraft((prev) => {
+          const next = { ...prev };
+          for (const c of newClips) {
+            if (!next[c.id]) {
+              next[c.id] = {
+                player_name: c.player_name ?? "",
+                jersey_number: c.jersey_number ?? "",
+              };
+            }
+          }
+          return next;
+        });
+
+        // keep polling until clips appear
+        if (newClips.length === 0 && !cancelled) {
+          timer = setTimeout(poll, 2000);
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(String(e));
+        }
+      }
+    }
+
+    if (uploadId) {
+      poll();
+    }
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [uploadId]);
+
+  async function saveLabels(clipId: string) {
     try {
       setError("");
-      const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
-        cache: "no-store",
+      setSavingId(clipId);
+
+      const payload = draft[clipId] ?? {
+        player_name: "",
+        jersey_number: "",
+      };
+
+      const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -43,76 +114,24 @@ export default function UploadDetailPage() {
         return;
       }
 
-      const data = await res.json();
-      const newClips: ClipRow[] = data.clips ?? [];
-      setClips(newClips);
-
-      const nextDraft: Record<string, { player_name: string; jersey_number: string }> = {};
-      for (const c of newClips) {
-        nextDraft[c.id] = {
-          player_name: c.player_name ?? "",
-          jersey_number: c.jersey_number ?? "",
-        };
-      }
-      setDraft(nextDraft);
+      // update local clip values after save
+      setClips((prev) =>
+        prev.map((c) =>
+          c.id === clipId
+            ? {
+                ...c,
+                player_name: payload.player_name,
+                jersey_number: payload.jersey_number,
+              }
+            : c
+        )
+      );
     } catch (e: any) {
       setError(String(e));
+    } finally {
+      setSavingId("");
     }
   }
-
-useEffect(() => {
-  let cancelled = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  async function poll() {
-    try {
-      if (cancelled) return;
-
-      setError("");
-
-      const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
-        cache: "no-store",
-      });
-
-      if (!res.ok) {
-        if (!cancelled) setError(await res.text());
-        return;
-      }
-
-      const data = await res.json();
-      const newClips: ClipRow[] = data.clips ?? [];
-
-      if (cancelled) return;
-
-      setClips(newClips);
-
-      const nextDraft: Record<string, { player_name: string; jersey_number: string }> = {};
-      for (const c of newClips) {
-        nextDraft[c.id] = {
-          player_name: c.player_name ?? "",
-          jersey_number: c.jersey_number ?? "",
-        };
-      }
-      setDraft(nextDraft);
-
-      // keep polling until clips appear
-      if (newClips.length === 0 && !cancelled) {
-        timer = setTimeout(poll, 2000);
-      }
-    } catch (e: any) {
-      if (!cancelled) setError(String(e));
-    }
-  }
-
-  if (uploadId) {
-    poll();
-  }
-
-  return () => {
-    cancelled = true;
-    if (timer) clearTimeout(timer);
-  };
-}, [uploadId]);
 
   async function openClip(clipId: string) {
     try {
@@ -136,7 +155,6 @@ useEffect(() => {
         return;
       }
 
-      // This will either play in a new tab or download depending on browser/S3 headers
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (e: any) {
       setError(String(e));
@@ -153,7 +171,13 @@ useEffect(() => {
       <Link href="/uploads">← Back to uploads</Link>
 
       <h1 style={{ marginTop: 12 }}>Clips</h1>
-      <div style={{ opacity: 0.75, fontFamily: "monospace", marginBottom: 12 }}>
+      <div
+        style={{
+          opacity: 0.75,
+          fontFamily: "monospace",
+          marginBottom: 12,
+        }}
+      >
         Upload ID: {uploadId}
       </div>
 
@@ -174,7 +198,7 @@ useEffect(() => {
       )}
 
       {clips.length === 0 ? (
-        <p>No clips yet.</p>
+        <p>Processing clips… this page will refresh automatically.</p>
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {clips.map((c) => (
@@ -187,18 +211,43 @@ useEffect(() => {
                 marginBottom: 12,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 12,
+                }}
+              >
                 <div>
                   <strong>{c.label || "Clip"}</strong>
-                  <div style={{ fontSize: 12, opacity: 0.7, marginTop: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.7,
+                      marginTop: 4,
+                    }}
+                  >
                     {new Date(c.created_at).toLocaleString()}
                   </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+                  <div
+                    style={{
+                      fontFamily: "monospace",
+                      fontSize: 12,
+                      opacity: 0.7,
+                      marginTop: 6,
+                    }}
+                  >
                     {c.s3_key}
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "flex-start",
+                  }}
+                >
                   <button
                     onClick={() => openClip(c.id)}
                     disabled={openingId === c.id}
@@ -209,7 +258,14 @@ useEffect(() => {
                 </div>
               </div>
 
-              <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div
+                style={{
+                  marginTop: 12,
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}
+              >
                 <input
                   placeholder="Player name"
                   value={draft[c.id]?.player_name || ""}
@@ -217,12 +273,20 @@ useEffect(() => {
                     setDraft((prev) => ({
                       ...prev,
                       [c.id]: {
-                        ...(prev[c.id] ?? { player_name: "", jersey_number: "" }),
+                        ...(prev[c.id] ?? {
+                          player_name: "",
+                          jersey_number: "",
+                        }),
                         player_name: e.target.value,
                       },
                     }))
                   }
-                  style={{ padding: 8, borderRadius: 8, border: "1px solid #333", minWidth: 220 }}
+                  style={{
+                    padding: 8,
+                    borderRadius: 8,
+                    border: "1px solid #333",
+                    minWidth: 220,
+                  }}
                 />
 
                 <input
@@ -232,12 +296,20 @@ useEffect(() => {
                     setDraft((prev) => ({
                       ...prev,
                       [c.id]: {
-                        ...(prev[c.id] ?? { player_name: "", jersey_number: "" }),
+                        ...(prev[c.id] ?? {
+                          player_name: "",
+                          jersey_number: "",
+                        }),
                         jersey_number: e.target.value,
                       },
                     }))
                   }
-                  style={{ width: 110, padding: 8, borderRadius: 8, border: "1px solid #333" }}
+                  style={{
+                    width: 110,
+                    padding: 8,
+                    borderRadius: 8,
+                    border: "1px solid #333",
+                  }}
                 />
 
                 <button
@@ -245,7 +317,7 @@ useEffect(() => {
                   disabled={savingId === c.id}
                   style={{ padding: "8px 12px", borderRadius: 8 }}
                 >
-                  {savingId === c.id ? "Saving..." : "Save"}
+                  {savingId === c.id ? "Saving…" : "Save"}
                 </button>
               </div>
             </li>
