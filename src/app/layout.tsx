@@ -11,7 +11,8 @@ export default function RootLayout({
   return (
     <ClerkProvider
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      fallbackRedirectUrl="/uploads"
+      signInFallbackRedirectUrl="/uploads"
+      signUpFallbackRedirectUrl="/uploads"
     >
       <html lang="en">
         <body>{children}</body>
