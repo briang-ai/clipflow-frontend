@@ -19,6 +19,7 @@ export default function UploadsPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [error, setError] = useState<string>("");
+  const [downloadingId, setDownloadingId] = useState<string>("");
 
   const myUploads = useMemo(() => {
     const uid = user?.id;
@@ -45,6 +46,54 @@ export default function UploadsPage() {
     }
     if (isLoaded && isSignedIn) load();
   }, [isLoaded, isSignedIn]);
+
+  async function downloadUpload(uploadId: string, filename: string) {
+    try {
+      setError("");
+      setDownloadingId(uploadId);
+
+      // Open blank window immediately (before await) so iOS Safari allows it
+      const newWindow = window.open("", "_blank");
+
+      const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/download`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        newWindow?.close();
+        setError(await res.text());
+        return;
+      }
+
+      const data = await res.json();
+      const url = data?.download_url;
+
+      if (!url) {
+        newWindow?.close();
+        setError("Missing download_url in response: " + JSON.stringify(data));
+        return;
+      }
+
+      if (newWindow) {
+        // Point the already-open window at the file — browser will download it
+        newWindow.location.href = url;
+      } else {
+        // Fallback anchor approach
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (e: any) {
+      setError(`Download error: ${String(e)}`);
+    } finally {
+      setDownloadingId("");
+    }
+  }
 
   const loadingStyle = {
     background: "#0a0a0a", minHeight: "100vh", padding: 24,
@@ -73,6 +122,26 @@ export default function UploadsPage() {
           font-size:12px;font-weight:500;font-family:monospace;
           background:#1a1a1a;border:1px solid #2a2a2a;color:#999;
         }
+
+        .btn-view{
+          padding:7px 14px;border-radius:10px;border:none;
+          background:linear-gradient(135deg,#e8622c,#f0a830);
+          color:#fff;font-weight:600;font-size:12px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          text-decoration:none;white-space:nowrap;
+          transition:opacity 0.2s;
+        }
+        .btn-view:hover{opacity:0.9}
+
+        .btn-download{
+          padding:7px 14px;border-radius:10px;
+          background:#1a1a1a;border:1px solid #2a2a2a;
+          color:#ccc;font-weight:500;font-size:12px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          white-space:nowrap;transition:border-color 0.2s;
+        }
+        .btn-download:hover{border-color:rgba(232,98,44,0.4);color:#fff}
+        .btn-download:disabled{opacity:0.5;cursor:not-allowed}
       `}</style>
 
       <div style={{
@@ -193,25 +262,39 @@ export default function UploadsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {myUploads.map((u) => (
               <div key={u.id} className="upload-card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                  <Link
-                    href={`/uploads/${u.id}`}
-                    style={{
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
                       fontWeight: 600,
                       fontSize: 16,
                       color: "#fff",
-                      textDecoration: "none",
                       lineHeight: 1.3,
-                    }}
-                    onMouseOver={e => { e.currentTarget.style.background = "linear-gradient(135deg,#e8622c,#f0a830)"; e.currentTarget.style.webkitBackgroundClip = "text"; (e.currentTarget.style as any).webkitTextFillColor = "transparent"; }}
-                    onMouseOut={e => { e.currentTarget.style.background = "none"; (e.currentTarget.style as any).webkitTextFillColor = "#fff"; }}
-                  >
-                    {u.original_filename}
-                  </Link>
-                  <span className="status-pill">{u.status}</span>
-                </div>
-                <div style={{ marginTop: 8, fontSize: 13, color: "#666" }}>
-                  {new Date(u.created_at).toLocaleString()}
+                      marginBottom: 4,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {u.original_filename}
+                    </div>
+                    <div style={{ fontSize: 13, color: "#666" }}>
+                      {new Date(u.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    <span className="status-pill">{u.status}</span>
+                    {/* View clips button */}
+                    <Link href={`/uploads/${u.id}`} className="btn-view">
+                      ▶ View Clips
+                    </Link>
+                    {/* Download original button */}
+                    <button
+                      className="btn-download"
+                      onClick={() => downloadUpload(u.id, u.original_filename)}
+                      disabled={downloadingId === u.id}
+                    >
+                      {downloadingId === u.id ? "…" : "⬇ Download"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
