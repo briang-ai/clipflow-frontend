@@ -119,23 +119,45 @@ export default function UploadsPage() {
               uploads
             </span>
           </h1>
-          <Link
-            href="/upload"
-            style={{
-              padding: "10px 20px",
-              borderRadius: 12,
-              border: "none",
-              background: "linear-gradient(135deg,#e8622c,#f0a830)",
-              color: "#fff",
-              fontWeight: 600,
-              fontSize: 14,
-              fontFamily: "'Outfit', sans-serif",
-              textDecoration: "none",
-              whiteSpace: "nowrap" as const,
-            }}
-          >
-            + Upload Video
-          </Link>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <a
+              href="mailto:info@clipflow.pro?subject=ClipFlow%20Beta%20Feedback"
+              style={{
+                padding: "10px 20px",
+                borderRadius: 12,
+                background: "#141414",
+                border: "1px solid rgba(232,98,44,0.35)",
+                color: "#f0a830",
+                fontWeight: 600,
+                fontSize: 14,
+                fontFamily: "'Outfit', sans-serif",
+                textDecoration: "none",
+                whiteSpace: "nowrap" as const,
+                transition: "border-color 0.2s",
+              }}
+              onMouseOver={e => (e.currentTarget.style.borderColor = "#e8622c")}
+              onMouseOut={e => (e.currentTarget.style.borderColor = "rgba(232,98,44,0.35)")}
+            >
+              💬 Send Feedback
+            </a>
+            <Link
+              href="/upload"
+              style={{
+                padding: "10px 20px",
+                borderRadius: 12,
+                border: "none",
+                background: "linear-gradient(135deg,#e8622c,#f0a830)",
+                color: "#fff",
+                fontWeight: 600,
+                fontSize: 14,
+                fontFamily: "'Outfit', sans-serif",
+                textDecoration: "none",
+                whiteSpace: "nowrap" as const,
+              }}
+            >
+              + Upload Video
+            </Link>
+          </div>
         </div>
 
         {/* Error */}
