@@ -93,7 +93,20 @@ export default function JoinPage() {
         .fm button:active{transform:scale(0.98)}
         .fm button:disabled{opacity:0.5;cursor:not-allowed}
 
-        .hint{color:#666;font-size:13px;margin-bottom:44px}
+        .hint{color:#666;font-size:13px;margin-bottom:28px}
+
+        .signup-btn{
+          display:inline-block;
+          padding:14px 28px;border-radius:14px;border:none;
+          background:linear-gradient(135deg,#e8622c,#f0a830);
+          color:#fff;font-weight:600;font-size:15px;
+          font-family:'Outfit',sans-serif;
+          cursor:pointer;text-decoration:none;
+          transition:opacity 0.2s,transform 0.1s;
+          margin-bottom:44px;
+        }
+        .signup-btn:hover{opacity:0.9}
+        .signup-btn:active{transform:scale(0.98)}
 
         .ok{
           color:#34d399;display:block;margin-bottom:24px;font-weight:500;font-size:16px;
@@ -150,6 +163,7 @@ export default function JoinPage() {
           .sub{font-size:14px}
           .fm{flex-direction:column}
           .fm button{padding:14px}
+          .signup-btn{width:100%;text-align:center}
           .steps{grid-template-columns:1fr;gap:8px}
           .step{display:flex;align-items:center;gap:14px;text-align:left;padding:16px}
           .step .si{margin-bottom:0;font-size:24px}
@@ -203,6 +217,11 @@ export default function JoinPage() {
         ) : (
           <p className="ok">&#10003; You&apos;re on the list! We&apos;ll be in touch soon.</p>
         )}
+
+        {/* Sign Up CTA */}
+        <a href="https://www.clipflow.pro/sign-up" className="signup-btn">
+          Take Me To Sign Up →
+        </a>
 
         {/* Divider */}
         <div className="divider"></div>
