@@ -96,7 +96,16 @@ export default function UploadDetailPage() {
       const data = await res.json();
       const url = data?.download_url;
       if (!url) { setError("Missing download_url in response: " + JSON.stringify(data)); return; }
-      window.open(url, "_blank", "noopener,noreferrer");
+
+      // Use a temporary <a> tag instead of window.open() so mobile browsers
+      // (especially iOS Safari) don't block it as a popup
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch (e: any) { setError(String(e)); }
     finally { setOpeningId(""); }
   }
@@ -189,9 +198,7 @@ export default function UploadDetailPage() {
           </span>
         </h1>
 
-        <div style={{
-          fontFamily: "monospace", fontSize: 12, color: "#555", marginBottom: 24,
-        }}>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#555", marginBottom: 24 }}>
           Upload ID: {uploadId}
         </div>
 
