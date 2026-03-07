@@ -15,6 +15,9 @@ type ClipRow = {
   player_name?: string | null;
   jersey_number?: string | null;
   created_at: string;
+  is_hit?: boolean | null;
+  ai_confidence?: number | null;
+  ai_reason?: string | null;
 };
 
 export default function UploadDetailPage() {
@@ -220,13 +223,25 @@ export default function UploadDetailPage() {
               >
                 <div>
                   <strong>{c.label || "Clip"}</strong>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.7,
-                      marginTop: 4,
-                    }}
-                  >
+                  <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>
+                    <div>
+                      AI:{" "}
+                      {c.is_hit === true
+                        ? "✅ Hit"
+                        : c.is_hit === false
+                        ? "❌ Not a hit"
+                        : "🤷 Not scored"}
+                      {typeof c.ai_confidence === "number"
+                        ? ` (${Math.round(c.ai_confidence * 100)}%)`
+                        : ""}
+                      </div>
+
+                      {c.ai_reason && (
+                        <div style={{ marginTop: 4, opacity: 0.75 }}>
+                          {c.ai_reason}
+                        </div>
+                      )}
+                    </div>
                     {new Date(c.created_at).toLocaleString()}
                   </div>
                   <div
