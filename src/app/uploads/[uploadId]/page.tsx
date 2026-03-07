@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -29,6 +28,7 @@ export default function UploadDetailPage() {
   const [error, setError] = useState<string>("");
   const [savingId, setSavingId] = useState<string>("");
   const [openingId, setOpeningId] = useState<string>("");
+  const [downloadingId, setDownloadingId] = useState<string>("");
 
   const [draft, setDraft] = useState<
     Record<string, { player_name: string; jersey_number: string }>
@@ -88,39 +88,55 @@ export default function UploadDetailPage() {
     finally { setSavingId(""); }
   }
 
+  // Fetch the presigned URL and open/download using iOS-safe window.open pattern
+  async function getClipUrl(clipId: string): Promise<string | null> {
+    const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, { cache: "no-store" });
+    if (!res.ok) { setError(await res.text()); return null; }
+    const data = await res.json();
+    const url = data?.download_url;
+    if (!url) { setError("Missing download_url in response: " + JSON.stringify(data)); return null; }
+    return url;
+  }
+
+  // Play — opens in new tab for inline viewing
   async function openClip(clipId: string) {
     try {
       setError(""); setOpeningId(clipId);
-
-      // Open the window synchronously BEFORE any await so iOS Safari
-      // treats it as a direct user gesture and doesn't block it
+      // Open blank window synchronously before await so iOS Safari allows it
       const newWindow = window.open("", "_blank");
-
-      const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, { cache: "no-store" });
-      if (!res.ok) {
-        newWindow?.close();
-        setError(await res.text());
-        return;
-      }
-      const data = await res.json();
-      const url = data?.download_url;
-      if (!url) {
-        newWindow?.close();
-        setError("Missing download_url in response: " + JSON.stringify(data));
-        return;
-      }
-
-      // Now point the already-open window at the real URL
+      const url = await getClipUrl(clipId);
+      if (!url) { newWindow?.close(); return; }
       if (newWindow) {
         newWindow.location.href = url;
       } else {
-        // Fallback if pop-up was still blocked
         const a = document.createElement("a");
         a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
       }
     } catch (e: any) { setError(String(e)); }
     finally { setOpeningId(""); }
+  }
+
+  // Download — triggers save-to-device via anchor with download attribute
+  async function downloadClip(clipId: string, label: string) {
+    try {
+      setError(""); setDownloadingId(clipId);
+      // Open blank window synchronously before await so iOS Safari allows it
+      const newWindow = window.open("", "_blank");
+      const url = await getClipUrl(clipId);
+      if (!url) { newWindow?.close(); return; }
+      if (newWindow) {
+        // On iOS Safari, pointing the window at the URL will trigger download/share sheet
+        newWindow.location.href = url;
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${label || clipId}.mp4`;
+        a.target = "_blank"; a.rel = "noopener noreferrer";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
+    } catch (e: any) { setError(String(e)); }
+    finally { setDownloadingId(""); }
   }
 
   const loadingStyle = {
@@ -155,7 +171,7 @@ export default function UploadDetailPage() {
         .clip-input::placeholder{color:#555}
 
         .btn-primary{
-          padding:10px 18px;border-radius:10px;border:none;
+          padding:9px 16px;border-radius:10px;border:none;
           background:linear-gradient(135deg,#e8622c,#f0a830);
           color:#fff;font-weight:600;font-size:13px;
           font-family:'Outfit',sans-serif;cursor:pointer;
@@ -165,13 +181,13 @@ export default function UploadDetailPage() {
         .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
 
         .btn-secondary{
-          padding:10px 18px;border-radius:10px;
+          padding:9px 16px;border-radius:10px;
           background:#1a1a1a;border:1px solid #2a2a2a;
           color:#ccc;font-weight:500;font-size:13px;
           font-family:'Outfit',sans-serif;cursor:pointer;
           transition:border-color 0.2s;white-space:nowrap;
         }
-        .btn-secondary:hover{border-color:rgba(232,98,44,0.3)}
+        .btn-secondary:hover{border-color:rgba(232,98,44,0.3);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
       `}</style>
 
@@ -240,10 +256,9 @@ export default function UploadDetailPage() {
             {clips.map((c) => (
               <div key={c.id} className="clip-card">
 
-                {/* Top row: info + play button */}
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-                  <div style={{ flex: 1 }}>
-
+                {/* Top row: info + buttons */}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     {/* Clip label */}
                     <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 10 }}>
                       {c.label || "Clip"}
@@ -283,14 +298,23 @@ export default function UploadDetailPage() {
                     </div>
                   </div>
 
-                  {/* Play button */}
-                  <button
-                    className="btn-primary"
-                    onClick={() => openClip(c.id)}
-                    disabled={openingId === c.id}
-                  >
-                    {openingId === c.id ? "Opening…" : "▶ Play / Download"}
-                  </button>
+                  {/* Play + Download buttons */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                    <button
+                      className="btn-primary"
+                      onClick={() => openClip(c.id)}
+                      disabled={openingId === c.id || downloadingId === c.id}
+                    >
+                      {openingId === c.id ? "Opening…" : "▶ Play"}
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => downloadClip(c.id, c.label || c.id)}
+                      disabled={downloadingId === c.id || openingId === c.id}
+                    >
+                      {downloadingId === c.id ? "…" : "⬇ Download"}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Divider */}
