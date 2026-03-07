@@ -101,7 +101,7 @@ export default function UploadsPage() {
           marginBottom: 24,
           background: "linear-gradient(135deg,#e8622c,#f0a830)",
           WebkitBackgroundClip: "text",
-          webkitTextFillColor: "transparent",
+          WebkitTextFillColor: "transparent",
           border: "1px solid rgba(232,98,44,0.3)",
         }}>
           Beta Testing
