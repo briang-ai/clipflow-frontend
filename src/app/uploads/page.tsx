@@ -100,7 +100,7 @@ export default function UploadsPage() {
           letterSpacing: "1.5px",
           marginBottom: 24,
           background: "linear-gradient(135deg,#e8622c,#f0a830)",
-          webkitBackgroundClip: "text",
+          WebkitBackgroundClip: "text",
           webkitTextFillColor: "transparent",
           border: "1px solid rgba(232,98,44,0.3)",
         }}>
