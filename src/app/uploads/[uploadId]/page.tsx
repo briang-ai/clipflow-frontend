@@ -37,324 +37,293 @@ export default function UploadDetailPage() {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-
     let lastCount = -1;
     let unchangedPolls = 0;
 
     async function poll() {
       try {
         if (cancelled) return;
-
-        const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
-          cache: "no-store",
-        });
-
+        const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, { cache: "no-store" });
         if (!res.ok) {
           if (!cancelled) setError(await res.text());
           return;
         }
-
         const data = await res.json();
         const newClips: ClipRow[] = data.clips ?? [];
-
         if (cancelled) return;
-
         setClips(newClips);
-
         setDraft((prev) => {
           const next = { ...prev };
           for (const c of newClips) {
             if (!next[c.id]) {
-              next[c.id] = {
-                player_name: c.player_name ?? "",
-                jersey_number: c.jersey_number ?? "",
-              };
+              next[c.id] = { player_name: c.player_name ?? "", jersey_number: c.jersey_number ?? "" };
             }
           }
           return next;
         });
-
-        // Polling strategy:
-        // - keep polling while clips are still arriving
-        // - stop only after the count hasn't changed for 3 polls in a row
-        if (newClips.length !== lastCount) {
-          lastCount = newClips.length;
-          unchangedPolls = 0;
-        } else {
-          unchangedPolls += 1;
-        }
-
-        if (!cancelled && unchangedPolls < 3) {
-          timer = setTimeout(poll, 2000);
-        }
+        if (newClips.length !== lastCount) { lastCount = newClips.length; unchangedPolls = 0; }
+        else { unchangedPolls += 1; }
+        if (!cancelled && unchangedPolls < 3) timer = setTimeout(poll, 2000);
       } catch (e: any) {
         if (!cancelled) setError(String(e));
       }
     }
 
-    if (uploadId) {
-      setError("");
-      poll();
-    }
-
-    return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
-    };
+    if (uploadId) { setError(""); poll(); }
+    return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [uploadId]);
 
   async function saveLabels(clipId: string) {
     try {
-      setError("");
-      setSavingId(clipId);
-
-      const payload = draft[clipId] ?? {
-        player_name: "",
-        jersey_number: "",
-      };
-
+      setError(""); setSavingId(clipId);
+      const payload = draft[clipId] ?? { player_name: "", jersey_number: "" };
       const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        setError(await res.text());
-        return;
-      }
-
-      setClips((prev) =>
-        prev.map((c) =>
-          c.id === clipId
-            ? {
-                ...c,
-                player_name: payload.player_name,
-                jersey_number: payload.jersey_number,
-              }
-            : c
-        )
-      );
-    } catch (e: any) {
-      setError(String(e));
-    } finally {
-      setSavingId("");
-    }
+      if (!res.ok) { setError(await res.text()); return; }
+      setClips((prev) => prev.map((c) => c.id === clipId ? { ...c, ...payload } : c));
+    } catch (e: any) { setError(String(e)); }
+    finally { setSavingId(""); }
   }
 
   async function openClip(clipId: string) {
     try {
-      setError("");
-      setOpeningId(clipId);
-
-      const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, {
-        cache: "no-store",
-      });
-
-      if (!res.ok) {
-        setError(await res.text());
-        return;
-      }
-
+      setError(""); setOpeningId(clipId);
+      const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, { cache: "no-store" });
+      if (!res.ok) { setError(await res.text()); return; }
       const data = await res.json();
       const url = data?.download_url;
-
-      if (!url) {
-        setError("Missing download_url in response: " + JSON.stringify(data));
-        return;
-      }
-
+      if (!url) { setError("Missing download_url in response: " + JSON.stringify(data)); return; }
       window.open(url, "_blank", "noopener,noreferrer");
-    } catch (e: any) {
-      setError(String(e));
-    } finally {
-      setOpeningId("");
-    }
+    } catch (e: any) { setError(String(e)); }
+    finally { setOpeningId(""); }
   }
 
-  if (!isLoaded) return <div style={{ padding: 24 }}>Loading…</div>;
-  if (!isSignedIn) return <div style={{ padding: 24 }}>Please sign in.</div>;
+  const loadingStyle = {
+    background: "#0a0a0a", minHeight: "100vh", padding: 24,
+    color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif",
+  };
+
+  if (!isLoaded) return <div style={loadingStyle}>Loading…</div>;
+  if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
   return (
-    <div style={{ padding: 24 }}>
-      <Link href="/uploads">← Back to uploads</Link>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+        *{margin:0;padding:0;box-sizing:border-box}
+        body{background:#0a0a0a;color:#fff;font-family:'Outfit',-apple-system,system-ui,sans-serif}
 
-      <h1 style={{ marginTop: 12 }}>Clips</h1>
-      <div
-        style={{
-          opacity: 0.75,
-          fontFamily: "monospace",
-          marginBottom: 12,
+        .clip-card{
+          padding:20px;border-radius:16px;
+          background:#141414;border:1px solid #222;
+          margin-bottom:12px;transition:border-color 0.2s;
+        }
+        .clip-card:hover{border-color:rgba(232,98,44,0.3)}
+
+        .clip-input{
+          padding:10px 14px;border-radius:10px;
+          background:#1a1a1a;border:1px solid #2a2a2a;
+          color:#fff;font-size:14px;font-family:'Outfit',sans-serif;
+          outline:none;transition:border-color 0.2s;
+        }
+        .clip-input:focus{border-color:#e8622c}
+        .clip-input::placeholder{color:#555}
+
+        .btn-primary{
+          padding:10px 18px;border-radius:10px;border:none;
+          background:linear-gradient(135deg,#e8622c,#f0a830);
+          color:#fff;font-weight:600;font-size:13px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          transition:opacity 0.2s;white-space:nowrap;
+        }
+        .btn-primary:hover{opacity:0.9}
+        .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+
+        .btn-secondary{
+          padding:10px 18px;border-radius:10px;
+          background:#1a1a1a;border:1px solid #2a2a2a;
+          color:#ccc;font-weight:500;font-size:13px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          transition:border-color 0.2s;white-space:nowrap;
+        }
+        .btn-secondary:hover{border-color:rgba(232,98,44,0.3)}
+        .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
+      `}</style>
+
+      <div style={{
+        background: "#0a0a0a",
+        minHeight: "100vh",
+        fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
+        padding: "48px 24px",
+        maxWidth: 800,
+        margin: "0 auto",
+      }}>
+
+        {/* Logo */}
+        <div style={{ marginBottom: 36 }}>
+          <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
+        </div>
+
+        {/* Back link */}
+        <Link href="/uploads" style={{
+          fontSize: 13, color: "#666", textDecoration: "none",
+          display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 24,
         }}
-      >
-        Upload ID: {uploadId}
-      </div>
-
-      {error && (
-        <pre
-          style={{
-            whiteSpace: "pre-wrap",
-            background: "#1b1b1b",
-            border: "1px solid #333",
-            padding: 12,
-            borderRadius: 8,
-            color: "#ffb4b4",
-            marginBottom: 12,
-          }}
+          onMouseOver={e => (e.currentTarget.style.color = "#e8622c")}
+          onMouseOut={e => (e.currentTarget.style.color = "#666")}
         >
-          {error}
-        </pre>
-      )}
+          ← Back to uploads
+        </Link>
 
-      {clips.length === 0 ? (
-        <p>Processing clips… this page will refresh automatically.</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {clips.map((c) => (
-            <li
-              key={c.id}
-              style={{
-                border: "1px solid #333",
-                padding: 12,
-                borderRadius: 8,
-                marginBottom: 12,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 12,
-                }}
-              >
-                <div>
-                  <strong>{c.label || "Clip"}</strong>
+        {/* Header */}
+        <h1 style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px", marginBottom: 8 }}>
+          <span style={{
+            background: "linear-gradient(135deg,#e8622c,#f0a830)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+          }}>
+            Clips
+          </span>
+        </h1>
 
-                  <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>
-                    <div>
-                      AI:{" "}
-                      {c.is_hit === true
-                        ? "✅ Hit"
-                        : c.is_hit === false
-                        ? "❌ Not a hit"
-                        : "🤷 Not scored"}
-                      {typeof c.ai_confidence === "number"
-                        ? ` (${Math.round(c.ai_confidence * 100)}%)`
-                        : ""}
+        <div style={{
+          fontFamily: "monospace", fontSize: 12, color: "#555", marginBottom: 24,
+        }}>
+          Upload ID: {uploadId}
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div style={{
+            marginBottom: 20, padding: "14px 18px", borderRadius: 14,
+            background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)",
+            color: "#fca5a5", fontSize: 13, whiteSpace: "pre-wrap",
+          }}>
+            {error}
+          </div>
+        )}
+
+        {/* Empty / processing state */}
+        {clips.length === 0 ? (
+          <div style={{
+            padding: "32px 24px", borderRadius: 16,
+            background: "#141414", border: "1px solid #222",
+            color: "#666", fontSize: 15, textAlign: "center",
+          }}>
+            ⏳ Processing clips… this page will refresh automatically.
+          </div>
+        ) : (
+          <div>
+            {clips.map((c) => (
+              <div key={c.id} className="clip-card">
+
+                {/* Top row: info + play button */}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+
+                    {/* Clip label */}
+                    <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 10 }}>
+                      {c.label || "Clip"}
                     </div>
 
+                    {/* AI scoring */}
+                    <div style={{ fontSize: 13, color: "#999", marginBottom: 6 }}>
+                      <span style={{ marginRight: 6 }}>
+                        {c.is_hit === true ? "✅ Hit" : c.is_hit === false ? "❌ Not a hit" : "🤷 Not scored"}
+                      </span>
+                      {typeof c.ai_confidence === "number" && (
+                        <span style={{
+                          padding: "2px 8px", borderRadius: 20,
+                          background: "#1a1a1a", border: "1px solid #2a2a2a",
+                          fontSize: 12, fontFamily: "monospace",
+                        }}>
+                          {Math.round(c.ai_confidence * 100)}%
+                        </span>
+                      )}
+                    </div>
+
+                    {/* AI reason */}
                     {c.ai_reason && (
-                      <div style={{ marginTop: 4, opacity: 0.75 }}>
+                      <div style={{ fontSize: 13, color: "#666", marginBottom: 8, lineHeight: 1.5 }}>
                         {c.ai_reason}
                       </div>
                     )}
+
+                    {/* Timestamp */}
+                    <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
+                      {new Date(c.created_at).toLocaleString()}
+                    </div>
+
+                    {/* S3 key */}
+                    <div style={{ fontFamily: "monospace", fontSize: 11, color: "#444" }}>
+                      {c.s3_key}
+                    </div>
                   </div>
 
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.7,
-                      marginTop: 8,
-                    }}
-                  >
-                    {new Date(c.created_at).toLocaleString()}
-                  </div>
-
-                  <div
-                    style={{
-                      fontFamily: "monospace",
-                      fontSize: 12,
-                      opacity: 0.7,
-                      marginTop: 6,
-                    }}
-                  >
-                    {c.s3_key}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 8,
-                    alignItems: "flex-start",
-                  }}
-                >
+                  {/* Play button */}
                   <button
+                    className="btn-primary"
                     onClick={() => openClip(c.id)}
                     disabled={openingId === c.id}
-                    style={{ padding: "6px 10px", borderRadius: 8 }}
                   >
-                    {openingId === c.id ? "Opening…" : "Play/Download"}
+                    {openingId === c.id ? "Opening…" : "▶ Play / Download"}
                   </button>
                 </div>
-              </div>
 
-              <div
-                style={{
-                  marginTop: 12,
-                  display: "flex",
-                  gap: 10,
-                  flexWrap: "wrap",
-                }}
-              >
-                <input
-                  placeholder="Player name"
-                  value={draft[c.id]?.player_name || ""}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
+                {/* Divider */}
+                <div style={{ height: 1, background: "#222", margin: "14px 0" }} />
+
+                {/* Label inputs */}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <input
+                    className="clip-input"
+                    placeholder="Player name"
+                    value={draft[c.id]?.player_name || ""}
+                    onChange={(e) => setDraft((prev) => ({
                       ...prev,
-                      [c.id]: {
-                        ...(prev[c.id] ?? {
-                          player_name: "",
-                          jersey_number: "",
-                        }),
-                        player_name: e.target.value,
-                      },
-                    }))
-                  }
-                  style={{
-                    padding: 8,
-                    borderRadius: 8,
-                    border: "1px solid #333",
-                    minWidth: 220,
-                  }}
-                />
-
-                <input
-                  placeholder="Jersey #"
-                  value={draft[c.id]?.jersey_number || ""}
-                  onChange={(e) =>
-                    setDraft((prev) => ({
+                      [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), player_name: e.target.value },
+                    }))}
+                    style={{ minWidth: 200 }}
+                  />
+                  <input
+                    className="clip-input"
+                    placeholder="Jersey #"
+                    value={draft[c.id]?.jersey_number || ""}
+                    onChange={(e) => setDraft((prev) => ({
                       ...prev,
-                      [c.id]: {
-                        ...(prev[c.id] ?? {
-                          player_name: "",
-                          jersey_number: "",
-                        }),
-                        jersey_number: e.target.value,
-                      },
-                    }))
-                  }
-                  style={{
-                    width: 110,
-                    padding: 8,
-                    borderRadius: 8,
-                    border: "1px solid #333",
-                  }}
-                />
+                      [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), jersey_number: e.target.value },
+                    }))}
+                    style={{ width: 110 }}
+                  />
+                  <button
+                    className="btn-secondary"
+                    onClick={() => saveLabels(c.id)}
+                    disabled={savingId === c.id}
+                  >
+                    {savingId === c.id ? "Saving…" : "Save"}
+                  </button>
+                </div>
 
-                <button
-                  onClick={() => saveLabels(c.id)}
-                  disabled={savingId === c.id}
-                  style={{ padding: "8px 12px", borderRadius: 8 }}
-                >
-                  {savingId === c.id ? "Saving…" : "Save"}
-                </button>
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+
+        {/* Footer tagline */}
+        <p style={{
+          marginTop: 48, fontSize: 14, fontWeight: 500,
+          letterSpacing: "2px", textTransform: "uppercase",
+          background: "linear-gradient(135deg,#e8622c,#f0a830)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+        }}>
+          Find Your Flow
+        </p>
+
+      </div>
+    </>
   );
 }
