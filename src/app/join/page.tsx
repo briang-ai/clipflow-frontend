@@ -70,7 +70,16 @@ export default function JoinPage() {
           -webkit-background-clip:text;-webkit-text-fill-color:transparent
         }
 
-        .sub{color:#999;font-size:16px;line-height:1.6;margin-bottom:36px;font-weight:300}
+        .sub{color:#999;font-size:16px;line-height:1.6;margin-bottom:24px;font-weight:300}
+
+        .beta-notice{
+          padding:16px 20px;border-radius:16px;
+          background:rgba(232,98,44,0.08);
+          border:1px solid rgba(232,98,44,0.25);
+          color:#f0a830;font-size:14px;line-height:1.7;
+          font-weight:400;margin-bottom:32px;text-align:left;
+        }
+        .beta-notice strong{font-weight:600;color:#fff}
 
         .fm{display:flex;gap:8px;margin-bottom:10px}
         .fm input{
@@ -192,6 +201,11 @@ export default function JoinPage() {
           at-bat and builds per-player highlight reels &mdash; so you never
           scrub through footage again.
         </p>
+
+        {/* Beta Testing notice */}
+        <div className="beta-notice">
+          🚧 <strong>We are currently in Beta Testing.</strong> Join our waitlist below to be notified of developmental updates. You may also sign up if you wish to participate in the Beta Testing.
+        </div>
 
         {!submitted ? (
           <>
