@@ -100,8 +100,8 @@ export default function UploadsPage() {
           letterSpacing: "1.5px",
           marginBottom: 24,
           background: "linear-gradient(135deg,#e8622c,#f0a830)",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
+          webkitBackgroundClip: "text",
+          webkitTextFillColor: "transparent",
           border: "1px solid rgba(232,98,44,0.3)",
         }}>
           Beta Testing
@@ -113,8 +113,8 @@ export default function UploadsPage() {
             My{" "}
             <span style={{
               background: "linear-gradient(135deg,#e8622c,#f0a830)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
+              webkitBackgroundClip: "text",
+              webkitTextFillColor: "transparent",
             }}>
               uploads
             </span>
@@ -181,8 +181,8 @@ export default function UploadsPage() {
                       textDecoration: "none",
                       lineHeight: 1.3,
                     }}
-                    onMouseOver={e => (e.currentTarget.style.background = "linear-gradient(135deg,#e8622c,#f0a830)", e.currentTarget.style.WebkitBackgroundClip = "text", e.currentTarget.style.WebkitTextFillColor = "transparent")}
-                    onMouseOut={e => (e.currentTarget.style.background = "none", e.currentTarget.style.WebkitTextFillColor = "#fff")}
+                    onMouseOver={e => { e.currentTarget.style.background = "linear-gradient(135deg,#e8622c,#f0a830)"; e.currentTarget.style.webkitBackgroundClip = "text"; (e.currentTarget.style as any).webkitTextFillColor = "transparent"; }}
+                    onMouseOut={e => { e.currentTarget.style.background = "none"; (e.currentTarget.style as any).webkitTextFillColor = "#fff"; }}
                   >
                     {u.original_filename}
                   </Link>
@@ -204,8 +204,8 @@ export default function UploadsPage() {
           letterSpacing: "2px",
           textTransform: "uppercase",
           background: "linear-gradient(135deg,#e8622c,#f0a830)",
-          WebkitBackgroundClip: "text",
-          WebkitTextFillColor: "transparent",
+          webkitBackgroundClip: "text",
+          webkitTextFillColor: "transparent",
         }}>
           Find Your Flow
         </p>
