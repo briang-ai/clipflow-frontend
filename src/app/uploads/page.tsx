@@ -204,8 +204,8 @@ export default function UploadsPage() {
           letterSpacing: "2px",
           textTransform: "uppercase",
           background: "linear-gradient(135deg,#e8622c,#f0a830)",
-          webkitBackgroundClip: "text",
-          webkitTextFillColor: "transparent",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
         }}>
           Find Your Flow
         </p>
