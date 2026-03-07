@@ -14,10 +14,10 @@ type ClipRow = {
   label?: string | null;
   player_name?: string | null;
   jersey_number?: string | null;
-  created_at: string;
   is_hit?: boolean | null;
   ai_confidence?: number | null;
   ai_reason?: string | null;
+  created_at: string;
 };
 
 export default function UploadDetailPage() {
@@ -38,20 +38,19 @@ export default function UploadDetailPage() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
+    let lastCount = -1;
+    let unchangedPolls = 0;
+
     async function poll() {
       try {
         if (cancelled) return;
-
-        setError("");
 
         const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, {
           cache: "no-store",
         });
 
         if (!res.ok) {
-          if (!cancelled) {
-            setError(await res.text());
-          }
+          if (!cancelled) setError(await res.text());
           return;
         }
 
@@ -75,18 +74,26 @@ export default function UploadDetailPage() {
           return next;
         });
 
-        // keep polling until clips appear
-        if (newClips.length === 0 && !cancelled) {
+        // Polling strategy:
+        // - keep polling while clips are still arriving
+        // - stop only after the count hasn't changed for 3 polls in a row
+        if (newClips.length !== lastCount) {
+          lastCount = newClips.length;
+          unchangedPolls = 0;
+        } else {
+          unchangedPolls += 1;
+        }
+
+        if (!cancelled && unchangedPolls < 3) {
           timer = setTimeout(poll, 2000);
         }
       } catch (e: any) {
-        if (!cancelled) {
-          setError(String(e));
-        }
+        if (!cancelled) setError(String(e));
       }
     }
 
     if (uploadId) {
+      setError("");
       poll();
     }
 
@@ -117,7 +124,6 @@ export default function UploadDetailPage() {
         return;
       }
 
-      // update local clip values after save
       setClips((prev) =>
         prev.map((c) =>
           c.id === clipId
@@ -223,6 +229,7 @@ export default function UploadDetailPage() {
               >
                 <div>
                   <strong>{c.label || "Clip"}</strong>
+
                   <div style={{ marginTop: 8, fontSize: 13, opacity: 0.9 }}>
                     <div>
                       AI:{" "}
@@ -234,14 +241,25 @@ export default function UploadDetailPage() {
                       {typeof c.ai_confidence === "number"
                         ? ` (${Math.round(c.ai_confidence * 100)}%)`
                         : ""}
-                      {c.ai_reason && (
-                        <div style={{ marginTop: 4, opacity: 0.75 }}>
-                          {c.ai_reason}
-                        </div>
-                      )}
                     </div>
+
+                    {c.ai_reason && (
+                      <div style={{ marginTop: 4, opacity: 0.75 }}>
+                        {c.ai_reason}
+                      </div>
+                    )}
+                  </div>
+
+                  <div
+                    style={{
+                      fontSize: 12,
+                      opacity: 0.7,
+                      marginTop: 8,
+                    }}
+                  >
                     {new Date(c.created_at).toLocaleString()}
                   </div>
+
                   <div
                     style={{
                       fontFamily: "monospace",
