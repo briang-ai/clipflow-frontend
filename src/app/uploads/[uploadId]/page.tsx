@@ -234,8 +234,6 @@ export default function UploadDetailPage() {
                       {typeof c.ai_confidence === "number"
                         ? ` (${Math.round(c.ai_confidence * 100)}%)`
                         : ""}
-                      </div>
-
                       {c.ai_reason && (
                         <div style={{ marginTop: 4, opacity: 0.75 }}>
                           {c.ai_reason}
