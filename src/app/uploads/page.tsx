@@ -113,8 +113,8 @@ export default function UploadsPage() {
             My{" "}
             <span style={{
               background: "linear-gradient(135deg,#e8622c,#f0a830)",
-              webkitBackgroundClip: "text",
-              webkitTextFillColor: "transparent",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
             }}>
               uploads
             </span>
