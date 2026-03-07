@@ -91,21 +91,34 @@ export default function UploadDetailPage() {
   async function openClip(clipId: string) {
     try {
       setError(""); setOpeningId(clipId);
+
+      // Open the window synchronously BEFORE any await so iOS Safari
+      // treats it as a direct user gesture and doesn't block it
+      const newWindow = window.open("", "_blank");
+
       const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, { cache: "no-store" });
-      if (!res.ok) { setError(await res.text()); return; }
+      if (!res.ok) {
+        newWindow?.close();
+        setError(await res.text());
+        return;
+      }
       const data = await res.json();
       const url = data?.download_url;
-      if (!url) { setError("Missing download_url in response: " + JSON.stringify(data)); return; }
+      if (!url) {
+        newWindow?.close();
+        setError("Missing download_url in response: " + JSON.stringify(data));
+        return;
+      }
 
-      // Use a temporary <a> tag instead of window.open() so mobile browsers
-      // (especially iOS Safari) don't block it as a popup
-      const a = document.createElement("a");
-      a.href = url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // Now point the already-open window at the real URL
+      if (newWindow) {
+        newWindow.location.href = url;
+      } else {
+        // Fallback if pop-up was still blocked
+        const a = document.createElement("a");
+        a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
     } catch (e: any) { setError(String(e)); }
     finally { setOpeningId(""); }
   }
