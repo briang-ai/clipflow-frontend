@@ -27,7 +27,6 @@ type ReelRow = {
   created_at: string;
 };
 
-// Group uploads that are within 3 hours of each other into a "game"
 function groupIntoGames(uploads: UploadRow[]): UploadRow[][] {
   if (!uploads.length) return [];
   const sorted = [...uploads].sort(
@@ -37,13 +36,9 @@ function groupIntoGames(uploads: UploadRow[]): UploadRow[][] {
   for (let i = 1; i < sorted.length; i++) {
     const prev = new Date(sorted[i - 1].created_at).getTime();
     const curr = new Date(sorted[i].created_at).getTime();
-    if (curr - prev <= 3 * 60 * 60 * 1000) {
-      groups[groups.length - 1].push(sorted[i]);
-    } else {
-      groups.push([sorted[i]]);
-    }
+    if (curr - prev <= 3 * 60 * 60 * 1000) groups[groups.length - 1].push(sorted[i]);
+    else groups.push([sorted[i]]);
   }
-  // Newest game first
   return groups.reverse();
 }
 
@@ -65,10 +60,18 @@ export default function UploadsPage() {
   const [error, setError] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
 
-  // reels state keyed by upload_id (we fetch per-upload)
   const [reelsByUpload, setReelsByUpload] = useState<Record<string, ReelRow[]>>({});
-  const [compilingGroup, setCompilingGroup] = useState<string>(""); // groupKey being compiled
+  const [compilingGroup, setCompilingGroup] = useState<string>("");
   const [compileError, setCompileError] = useState<string>("");
+
+  // ── delete state ──────────────────────────────────────────────────────────
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [confirmModal, setConfirmModal] = useState<{
+    mode: "single" | "bulk";
+    uploadIds: string[];
+    label: string;
+  } | null>(null);
 
   const myUploads = useMemo(() => {
     const uid = user?.id;
@@ -78,7 +81,7 @@ export default function UploadsPage() {
 
   const gameGroups = useMemo(() => groupIntoGames(myUploads), [myUploads]);
 
-  // ── load uploads ────────────────────────────────────────────────────────────
+  // ── load uploads ──────────────────────────────────────────────────────────
   useEffect(() => {
     async function load() {
       try {
@@ -92,7 +95,7 @@ export default function UploadsPage() {
     if (isLoaded && isSignedIn) load();
   }, [isLoaded, isSignedIn]);
 
-  // ── load reels for every upload ─────────────────────────────────────────────
+  // ── load reels ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!myUploads.length) return;
     async function loadAllReels() {
@@ -112,12 +115,11 @@ export default function UploadsPage() {
     loadAllReels();
   }, [myUploads]);
 
-  // ── poll reels while any are compiling ──────────────────────────────────────
+  // ── poll reels while compiling ────────────────────────────────────────────
   useEffect(() => {
     const allReels = Object.values(reelsByUpload).flat();
     const stillWorking = allReels.some(r => r.status === "pending" || r.status === "processing");
     if (!stillWorking) { setCompilingGroup(""); return; }
-
     const timer = setTimeout(async () => {
       const results: Record<string, ReelRow[]> = { ...reelsByUpload };
       await Promise.all(
@@ -132,21 +134,15 @@ export default function UploadsPage() {
       );
       setReelsByUpload({ ...results });
     }, 3000);
-
     return () => clearTimeout(timer);
   }, [reelsByUpload]);
 
-  // ── compile reel for a game group ───────────────────────────────────────────
+  // ── compile ───────────────────────────────────────────────────────────────
   async function compileGroup(group: UploadRow[], groupKey: string) {
-    setCompileError("");
-    setCompilingGroup(groupKey);
-
-    // Gather hit clip IDs across all uploads in the group
-    // We need to fetch clips for each upload in the group
+    setCompileError(""); setCompilingGroup(groupKey);
     try {
       const allHitClipIds: string[] = [];
       const firstUploadId = group[0].id;
-
       await Promise.all(
         group.map(async u => {
           const res = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
@@ -156,35 +152,78 @@ export default function UploadsPage() {
           allHitClipIds.push(...hits);
         })
       );
-
       if (!allHitClipIds.length) {
         setCompileError("No hit clips found across this game's uploads.");
-        setCompilingGroup("");
-        return;
+        setCompilingGroup(""); return;
       }
-
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: firstUploadId, clip_ids: allHitClipIds }),
       });
       if (!res.ok) { setCompileError(await res.text()); setCompilingGroup(""); return; }
-
-      // Refresh reels so polling picks up the new pending reel
       const updatedReels: Record<string, ReelRow[]> = { ...reelsByUpload };
       const reelRes = await fetch(`${API_BASE}/api/uploads/${firstUploadId}/reels`, { cache: "no-store" });
-      if (reelRes.ok) {
-        const data = await reelRes.json();
-        updatedReels[firstUploadId] = data.reels ?? [];
-      }
+      if (reelRes.ok) { const data = await reelRes.json(); updatedReels[firstUploadId] = data.reels ?? []; }
       setReelsByUpload(updatedReels);
+    } catch (e: any) { setCompileError(String(e)); setCompilingGroup(""); }
+  }
+
+  // ── delete helpers ────────────────────────────────────────────────────────
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll(groupUploads: UploadRow[]) {
+    const ids = groupUploads.map(u => u.id);
+    const allSelected = ids.every(id => selectedIds.has(id));
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) ids.forEach(id => next.delete(id));
+      else ids.forEach(id => next.add(id));
+      return next;
+    });
+  }
+
+  function requestDelete(uploadIds: string[], label: string, mode: "single" | "bulk") {
+    setConfirmModal({ mode, uploadIds, label });
+  }
+
+  async function confirmDelete() {
+    if (!confirmModal) return;
+    const { uploadIds } = confirmModal;
+    setConfirmModal(null);
+    setDeletingIds(prev => new Set([...prev, ...uploadIds]));
+
+    try {
+      if (uploadIds.length === 1) {
+        await fetch(`${API_BASE}/api/uploads/${uploadIds[0]}`, { method: "DELETE" });
+      } else {
+        await fetch(`${API_BASE}/api/uploads/bulk`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ upload_ids: uploadIds }),
+        });
+      }
+      // Remove deleted uploads from local state
+      setUploads(prev => prev.filter(u => !uploadIds.includes(u.id)));
+      setSelectedIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
+      setReelsByUpload(prev => {
+        const next = { ...prev };
+        uploadIds.forEach(id => delete next[id]);
+        return next;
+      });
     } catch (e: any) {
-      setCompileError(String(e));
-      setCompilingGroup("");
+      setError(`Delete failed: ${String(e)}`);
+    } finally {
+      setDeletingIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
     }
   }
 
-  // ── reel play / download ────────────────────────────────────────────────────
+  // ── reel helpers ──────────────────────────────────────────────────────────
   async function getReelUrl(reelId: string): Promise<string | null> {
     const res = await fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" });
     if (!res.ok) { setCompileError(await res.text()); return null; }
@@ -212,7 +251,7 @@ export default function UploadsPage() {
     }
   }
 
-  // ── original upload download ────────────────────────────────────────────────
+  // ── upload download ───────────────────────────────────────────────────────
   async function downloadUpload(uploadId: string, filename: string) {
     try {
       setError(""); setDownloadingId(uploadId);
@@ -239,6 +278,8 @@ export default function UploadsPage() {
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
+  const anySelected = selectedIds.size > 0;
+
   return (
     <>
       <style>{`
@@ -252,6 +293,7 @@ export default function UploadsPage() {
           transition:border-color 0.2s;
         }
         .upload-card:hover{border-color:rgba(232,98,44,0.3)}
+        .upload-card.selected{border-color:rgba(232,98,44,0.5);background:#1a1212}
 
         .reel-card{
           padding:16px 20px;border-radius:14px;
@@ -294,6 +336,16 @@ export default function UploadsPage() {
         .btn-secondary:hover{border-color:rgba(232,98,44,0.4);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
 
+        .btn-danger{
+          padding:7px 14px;border-radius:10px;
+          background:#1a1a1a;border:1px solid rgba(239,68,68,0.3);
+          color:#ef4444;font-weight:500;font-size:12px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          white-space:nowrap;transition:border-color 0.2s,background 0.2s;
+        }
+        .btn-danger:hover{border-color:#ef4444;background:rgba(239,68,68,0.08)}
+        .btn-danger:disabled{opacity:0.5;cursor:not-allowed}
+
         .btn-compile{
           padding:9px 18px;border-radius:10px;border:none;
           background:linear-gradient(135deg,#e8622c,#f0a830);
@@ -318,6 +370,53 @@ export default function UploadsPage() {
           margin-bottom:24px;
         }
 
+        /* checkbox */
+        .cb{
+          width:18px;height:18px;border-radius:5px;
+          border:1px solid #333;background:#1a1a1a;
+          appearance:none;-webkit-appearance:none;
+          cursor:pointer;flex-shrink:0;position:relative;
+          transition:border-color 0.15s,background 0.15s;
+        }
+        .cb:checked{background:linear-gradient(135deg,#e8622c,#f0a830);border-color:#e8622c;}
+        .cb:checked::after{
+          content:'';position:absolute;left:5px;top:2px;
+          width:5px;height:9px;border:2px solid #fff;
+          border-left:none;border-top:none;transform:rotate(45deg);
+        }
+
+        /* trash icon button */
+        .btn-trash{
+          padding:6px 8px;border-radius:8px;
+          background:transparent;border:1px solid transparent;
+          color:#555;font-size:15px;cursor:pointer;
+          transition:color 0.15s,border-color 0.15s,background 0.15s;
+          line-height:1;
+        }
+        .btn-trash:hover{color:#ef4444;border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06)}
+        .btn-trash:disabled{opacity:0.3;cursor:not-allowed}
+
+        /* bulk delete bar */
+        .bulk-bar{
+          position:sticky;top:12px;z-index:10;
+          display:flex;align-items:center;justify-content:space-between;
+          gap:12px;flex-wrap:wrap;
+          padding:12px 18px;border-radius:12px;
+          background:#1a0e0e;border:1px solid rgba(239,68,68,0.3);
+          margin-bottom:20px;
+        }
+
+        /* modal overlay */
+        .modal-overlay{
+          position:fixed;inset:0;z-index:100;
+          background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);
+          display:flex;align-items:center;justify-content:center;padding:24px;
+        }
+        .modal{
+          background:#141414;border:1px solid #2a2a2a;border-radius:20px;
+          padding:28px 24px;max-width:400px;width:100%;
+        }
+
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{
           display:inline-block;width:13px;height:13px;
@@ -326,6 +425,35 @@ export default function UploadsPage() {
           vertical-align:middle;margin-right:5px;
         }
       `}</style>
+
+      {/* ── Confirm delete modal ─────────────────────────────────────────── */}
+      {confirmModal && (
+        <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 22, marginBottom: 12 }}>🗑️</div>
+            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Delete upload{confirmModal.uploadIds.length > 1 ? "s" : ""}?</div>
+            <div style={{ fontSize: 14, color: "#888", lineHeight: 1.6, marginBottom: 24 }}>
+              {confirmModal.mode === "bulk"
+                ? `This will permanently delete ${confirmModal.uploadIds.length} uploads, all their clips, and any compiled reels. This cannot be undone.`
+                : <>This will permanently delete <strong style={{ color: "#ccc" }}>{confirmModal.label}</strong>, all its clips, and any compiled reels. This cannot be undone.</>
+              }
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button className="btn-secondary" onClick={() => setConfirmModal(null)}>Cancel</button>
+              <button
+                onClick={confirmDelete}
+                style={{
+                  padding: "9px 18px", borderRadius: 10, border: "none",
+                  background: "#ef4444", color: "#fff", fontWeight: 600,
+                  fontSize: 13, fontFamily: "'Outfit',sans-serif", cursor: "pointer",
+                }}
+              >
+                Yes, delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
@@ -402,6 +530,26 @@ export default function UploadsPage() {
           }}>{compileError}</div>
         )}
 
+        {/* Bulk delete bar — appears when any checkboxes are ticked */}
+        {anySelected && (
+          <div className="bulk-bar">
+            <span style={{ fontSize: 14, color: "#ccc" }}>
+              <strong style={{ color: "#fff" }}>{selectedIds.size}</strong> upload{selectedIds.size !== 1 ? "s" : ""} selected
+            </span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn-secondary" onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+              <button
+                className="btn-danger"
+                onClick={() => requestDelete([...selectedIds], "", "bulk")}
+              >
+                🗑️ Delete selected
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Empty state */}
         {gameGroups.length === 0 ? (
           <div style={{
@@ -413,22 +561,33 @@ export default function UploadsPage() {
           </div>
         ) : (
           gameGroups.map((group, gi) => {
-            const groupKey = group[0].id; // stable key = oldest upload in group
+            const groupKey = group[0].id;
             const groupReels = group.flatMap(u => reelsByUpload[u.id] ?? []);
             const isCompiling = compilingGroup === groupKey ||
               groupReels.some(r => r.status === "pending" || r.status === "processing");
+            const allGroupSelected = group.every(u => selectedIds.has(u.id));
 
             return (
               <div key={groupKey}>
                 {/* Game header */}
                 <div className="game-header">
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#555", marginBottom: 4 }}>
-                      Game {gameGroups.length - gi}
-                    </div>
-                    <div style={{ fontSize: 16, fontWeight: 700 }}>{fmtGameLabel(group)}</div>
-                    <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>
-                      {group.length} upload{group.length !== 1 ? "s" : ""}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    {/* Select-all checkbox for this group */}
+                    <input
+                      type="checkbox"
+                      className="cb"
+                      checked={allGroupSelected}
+                      onChange={() => toggleSelectAll(group)}
+                      title="Select all in this game"
+                    />
+                    <div>
+                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#555", marginBottom: 4 }}>
+                        Game {gameGroups.length - gi}
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{fmtGameLabel(group)}</div>
+                      <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>
+                        {group.length} upload{group.length !== 1 ? "s" : ""}
+                      </div>
                     </div>
                   </div>
                   <button
@@ -456,9 +615,7 @@ export default function UploadsPage() {
                                 padding: "2px 8px", borderRadius: 20,
                                 background: "rgba(232,98,44,0.12)",
                                 border: "1px solid rgba(232,98,44,0.25)", color: "#e8622c",
-                              }}>
-                                #{reel.jersey_number}
-                              </span>
+                              }}>#{reel.jersey_number}</span>
                             )}
                           </div>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
@@ -488,18 +645,27 @@ export default function UploadsPage() {
 
                   {/* Upload rows */}
                   {group.map(u => (
-                    <div key={u.id} className="upload-card">
+                    <div key={u.id} className={`upload-card ${selectedIds.has(u.id) ? "selected" : ""}`}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{
-                            fontWeight: 600, fontSize: 15, color: "#fff",
-                            marginBottom: 3, overflow: "hidden",
-                            textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          }}>
-                            {u.original_filename}
-                          </div>
-                          <div style={{ fontSize: 12, color: "#555" }}>
-                            {new Date(u.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                          {/* Per-row checkbox */}
+                          <input
+                            type="checkbox"
+                            className="cb"
+                            checked={selectedIds.has(u.id)}
+                            onChange={() => toggleSelect(u.id)}
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{
+                              fontWeight: 600, fontSize: 15, color: "#fff",
+                              marginBottom: 3, overflow: "hidden",
+                              textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}>
+                              {u.original_filename}
+                            </div>
+                            <div style={{ fontSize: 12, color: "#555" }}>
+                              {new Date(u.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                            </div>
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
@@ -511,6 +677,15 @@ export default function UploadsPage() {
                             disabled={downloadingId === u.id}
                           >
                             {downloadingId === u.id ? "…" : "⬇"}
+                          </button>
+                          {/* Trash icon */}
+                          <button
+                            className="btn-trash"
+                            onClick={() => requestDelete([u.id], u.original_filename, "single")}
+                            disabled={deletingIds.has(u.id)}
+                            title="Delete this upload"
+                          >
+                            {deletingIds.has(u.id) ? <span className="spinner" /> : "🗑️"}
                           </button>
                         </div>
                       </div>
