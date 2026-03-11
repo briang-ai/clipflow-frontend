@@ -19,38 +19,16 @@ type ClipRow = {
   created_at: string;
 };
 
-type ReelRow = {
-  id: string;
-  player_name: string;
-  jersey_number?: string | null;
-  game_date: string;
-  clip_count: number;
-  duration_sec?: number | null;
-  status: "pending" | "processing" | "complete" | "error";
-  error_message?: string | null;
-  created_at: string;
-};
-
-function fmtDuration(sec: number | null | undefined): string {
-  if (!sec) return "—";
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
 export default function UploadDetailPage() {
   const { isLoaded, isSignedIn } = useUser();
   const params = useParams();
   const uploadId = String(params.uploadId);
 
   const [clips, setClips] = useState<ClipRow[]>([]);
-  const [reels, setReels] = useState<ReelRow[]>([]);
   const [error, setError] = useState<string>("");
   const [savingId, setSavingId] = useState<string>("");
   const [openingId, setOpeningId] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
-  const [compilingId, setCompilingId] = useState<string>("");   // reelId being polled
-  const [compileError, setCompileError] = useState<string>("");
 
   const [draft, setDraft] = useState<
     Record<string, { player_name: string; jersey_number: string }>
@@ -72,7 +50,7 @@ export default function UploadDetailPage() {
         const newClips: ClipRow[] = data.clips ?? [];
         if (cancelled) return;
         setClips(newClips);
-        setDraft((prev) => {
+        setDraft(prev => {
           const next = { ...prev };
           for (const c of newClips) {
             if (!next[c.id])
@@ -89,51 +67,6 @@ export default function UploadDetailPage() {
     if (uploadId) { setError(""); poll(); }
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [uploadId]);
-
-  // ── reel polling (only while a reel is pending/processing) ──────────────────
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    async function pollReels() {
-      if (cancelled) return;
-      try {
-        const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/reels`, { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const rows: ReelRow[] = data.reels ?? [];
-        if (!cancelled) setReels(rows);
-
-        const stillWorking = rows.some(r => r.status === "pending" || r.status === "processing");
-        if (stillWorking && !cancelled) timer = setTimeout(pollReels, 3000);
-        else setCompilingId("");
-      } catch { /* silent */ }
-    }
-
-    pollReels();
-    return () => { cancelled = true; if (timer) clearTimeout(timer); };
-  }, [uploadId, compilingId]); // re-run when a new compile is kicked off
-
-  // ── compile a reel for this upload ─────────────────────────────────────────
-  async function compileReel() {
-    try {
-      setCompileError("");
-      const hitClipIds = clips.filter(c => c.is_hit === true).map(c => c.id);
-      if (hitClipIds.length === 0) {
-        setCompileError("No hits found on this upload to compile.");
-        return;
-      }
-
-      const res = await fetch(`${API_BASE}/api/reels/compile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ upload_id: uploadId, clip_ids: hitClipIds }),
-      });
-      if (!res.ok) { setCompileError(await res.text()); return; }
-      const data = await res.json();
-      setCompilingId(data.reel_id);   // triggers reel polling
-    } catch (e: any) { setCompileError(String(e)); }
-  }
 
   // ── clip helpers ────────────────────────────────────────────────────────────
   async function saveLabels(clipId: string) {
@@ -193,53 +126,11 @@ export default function UploadDetailPage() {
     finally { setDownloadingId(""); }
   }
 
-  // ── reel helpers ────────────────────────────────────────────────────────────
-  async function getReelUrl(reelId: string): Promise<string | null> {
-    const res = await fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" });
-    if (!res.ok) { setCompileError(await res.text()); return null; }
-    const data = await res.json();
-    return data?.download_url ?? null;
-  }
-
-  async function openReel(reelId: string) {
-    try {
-      setCompileError(""); setOpeningId(`reel_${reelId}`);
-      const newWindow = window.open("", "_blank");
-      const url = await getReelUrl(reelId);
-      if (!url) { newWindow?.close(); return; }
-      if (newWindow) newWindow.location.href = url;
-    } catch (e: any) { setCompileError(String(e)); }
-    finally { setOpeningId(""); }
-  }
-
-  async function downloadReel(reelId: string, playerName: string, gameDate: string) {
-    try {
-      setCompileError(""); setDownloadingId(`reel_${reelId}`);
-      const newWindow = window.open("", "_blank");
-      const url = await getReelUrl(reelId);
-      if (!url) { newWindow?.close(); return; }
-      if (newWindow) newWindow.location.href = url;
-      else {
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `highlight_${playerName}_${gameDate}.mp4`;
-        a.target = "_blank"; a.rel = "noopener noreferrer";
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      }
-    } catch (e: any) { setCompileError(String(e)); }
-    finally { setDownloadingId(""); }
-  }
-
-  // ── derived ─────────────────────────────────────────────────────────────────
-  const hitCount = clips.filter(c => c.is_hit === true).length;
-  const hasActiveReel = reels.some(r => r.status === "pending" || r.status === "processing");
-
   const loadingStyle = {
     background: "#0a0a0a", minHeight: "100vh", padding: 24,
     color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif",
   };
-
-  if (!isLoaded) return <div style={loadingStyle}>Loading…</div>;
+  if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
   return (
@@ -255,14 +146,6 @@ export default function UploadDetailPage() {
           margin-bottom:12px;transition:border-color 0.2s;
         }
         .clip-card:hover{border-color:rgba(232,98,44,0.3)}
-
-        .reel-card{
-          padding:20px;border-radius:16px;
-          background:#141414;border:1px solid #2a2a2a;
-          margin-bottom:12px;transition:border-color 0.2s;
-        }
-        .reel-card:hover{border-color:rgba(232,98,44,0.4)}
-        .reel-card.complete{border-color:rgba(232,98,44,0.25)}
 
         .clip-input{
           padding:10px 14px;border-radius:10px;
@@ -292,22 +175,6 @@ export default function UploadDetailPage() {
         }
         .btn-secondary:hover{border-color:rgba(232,98,44,0.3);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
-
-        .pill{
-          display:inline-flex;align-items:center;gap:6px;
-          padding:4px 10px;border-radius:20px;
-          background:#1a1a1a;border:1px solid #2a2a2a;
-          font-size:12px;color:#888;
-        }
-        .pill-value{color:#ccc;font-weight:500}
-
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .spinner{
-          display:inline-block;width:14px;height:14px;
-          border:2px solid #333;border-top-color:#e8622c;
-          border-radius:50%;animation:spin 0.7s linear infinite;
-          vertical-align:middle;margin-right:6px;
-        }
       `}</style>
 
       <div style={{
@@ -345,7 +212,7 @@ export default function UploadDetailPage() {
           Upload ID: {uploadId}
         </div>
 
-        {/* Clip error */}
+        {/* Error */}
         {error && (
           <div style={{
             marginBottom: 20, padding: "14px 18px", borderRadius: 14,
@@ -354,124 +221,7 @@ export default function UploadDetailPage() {
           }}>{error}</div>
         )}
 
-        {/* ── REELS SECTION ─────────────────────────────────────────────────── */}
-        <div style={{
-          marginBottom: 40, padding: "24px", borderRadius: 18,
-          background: "#111", border: "1px solid #1e1e1e",
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>Highlight Reels</h2>
-              <p style={{ fontSize: 13, color: "#555" }}>
-                {hitCount > 0 ? `${hitCount} hit clip${hitCount !== 1 ? "s" : ""} ready to compile` : "No hit clips on this upload yet"}
-              </p>
-            </div>
-            <button
-              className="btn-primary"
-              onClick={compileReel}
-              disabled={hitCount === 0 || hasActiveReel}
-            >
-              {hasActiveReel ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
-            </button>
-          </div>
-
-          {/* Compile error */}
-          {compileError && (
-            <div style={{
-              marginBottom: 16, padding: "12px 16px", borderRadius: 12,
-              background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)",
-              color: "#fca5a5", fontSize: 13,
-            }}>{compileError}</div>
-          )}
-
-          {/* Reel cards */}
-          {reels.length === 0 ? (
-            <div style={{
-              padding: "20px", borderRadius: 12, border: "1px dashed #222",
-              color: "#444", fontSize: 14, textAlign: "center",
-            }}>
-              No reels compiled yet — hit "Compile Reel" to get started.
-            </div>
-          ) : (
-            reels.map(reel => (
-              <div key={reel.id} className={`reel-card ${reel.status === "complete" ? "complete" : ""}`}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-
-                  {/* Left: metadata */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* Player name + jersey */}
-                    <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>
-                      {reel.player_name || "Unknown Player"}
-                      {reel.jersey_number && (
-                        <span style={{
-                          marginLeft: 10, fontSize: 13, fontWeight: 500,
-                          padding: "2px 10px", borderRadius: 20,
-                          background: "linear-gradient(135deg,rgba(232,98,44,0.15),rgba(240,168,48,0.15))",
-                          border: "1px solid rgba(232,98,44,0.25)", color: "#e8622c",
-                        }}>
-                          #{reel.jersey_number}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Pills: date / clips / duration */}
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                      <span className="pill">
-                        📅 <span className="pill-value">{new Date(reel.game_date).toLocaleDateString()}</span>
-                      </span>
-                      <span className="pill">
-                        🎞 <span className="pill-value">{reel.clip_count} clip{reel.clip_count !== 1 ? "s" : ""}</span>
-                      </span>
-                      <span className="pill">
-                        ⏱ <span className="pill-value">{fmtDuration(reel.duration_sec)}</span>
-                      </span>
-                    </div>
-
-                    {/* Status badge */}
-                    {reel.status !== "complete" && (
-                      <div style={{ fontSize: 13 }}>
-                        {reel.status === "pending" || reel.status === "processing" ? (
-                          <span style={{ color: "#f0a830" }}>
-                            <span className="spinner" />
-                            {reel.status === "pending" ? "Queued…" : "Compiling…"}
-                          </span>
-                        ) : (
-                          <span style={{ color: "#fca5a5" }}>
-                            ⚠ Error{reel.error_message ? `: ${reel.error_message}` : ""}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Right: play / download buttons (only when complete) */}
-                  {reel.status === "complete" && (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                      <button
-                        className="btn-primary"
-                        onClick={() => openReel(reel.id)}
-                        disabled={openingId === `reel_${reel.id}` || downloadingId === `reel_${reel.id}`}
-                      >
-                        {openingId === `reel_${reel.id}` ? "Opening…" : "▶ Play"}
-                      </button>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => downloadReel(reel.id, reel.player_name, reel.game_date)}
-                        disabled={downloadingId === `reel_${reel.id}` || openingId === `reel_${reel.id}`}
-                      >
-                        {downloadingId === `reel_${reel.id}` ? "…" : "⬇ Download"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* ── CLIPS SECTION ─────────────────────────────────────────────────── */}
-        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16 }}>All Clips</h2>
-
+        {/* Clips */}
         {clips.length === 0 ? (
           <div style={{
             padding: "32px 24px", borderRadius: 16,
@@ -486,6 +236,8 @@ export default function UploadDetailPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 10 }}>{c.label || "Clip"}</div>
+
+                  {/* Hit scoring */}
                   <div style={{ fontSize: 13, color: "#999", marginBottom: 6 }}>
                     <span style={{ marginRight: 6 }}>
                       {c.is_hit === true ? "✅ Hit" : c.is_hit === false ? "❌ Not a hit" : "🤷 Not scored"}
@@ -523,6 +275,7 @@ export default function UploadDetailPage() {
 
               <div style={{ height: 1, background: "#222", margin: "14px 0" }} />
 
+              {/* Label inputs */}
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <input className="clip-input" placeholder="Player name"
                   value={draft[c.id]?.player_name || ""}
