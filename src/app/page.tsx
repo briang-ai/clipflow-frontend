@@ -128,7 +128,7 @@ export default function HomePage() {
 
         <div className="cta-row">
           <Link href="/join" className="btn-primary">Join Early Access</Link>
-          <Link href="/upload" className="btn-secondary">Upload Video</Link>
+          <Link href="/upload" className="btn-secondary">Record / Upload Video</Link>
           <Link href="/uploads" className="btn-secondary">View Uploads</Link>
         </div>
 
@@ -140,8 +140,8 @@ export default function HomePage() {
           <div className="step">
             <div className="step-num">1</div>
             <div className="si">📱</div>
-            <div className="st">Upload</div>
-            <div className="sd">Drop in a game recording from your phone or camera.</div>
+            <div className="st">Record / Upload</div>
+            <div className="sd">Record live or drop in a game recording from your phone.</div>
           </div>
           <div className="step">
             <div className="step-num">2</div>
