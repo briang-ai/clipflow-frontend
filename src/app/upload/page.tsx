@@ -88,6 +88,25 @@ export default function UploadPage() {
     setFile(null);
     setRecording(true);
     recordInputRef.current?.click();
+
+    // If user dismisses camera without recording, onChange won't fire on mobile.
+    // Listen for the page regaining focus and reset recording state if no file arrived.
+    const onFocus = () => {
+      setTimeout(() => {
+        setRecording(prev => {
+          // Only reset if we're still in recording state (no file was selected)
+          if (prev && !recordInputRef.current?.files?.length) return false;
+          return prev;
+        });
+      }, 500); // small delay to let onChange fire first if a file was selected
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
   }
 
   function onRecordingComplete(e: React.ChangeEvent<HTMLInputElement>) {
@@ -210,7 +229,7 @@ export default function UploadPage() {
 
         {/* Browse link */}
         {!recording && (
-          <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ textAlign: "center", marginBottom: 12 }}>
             <button
               className="btn-browse"
               onClick={() => fileInputRef.current?.click()}
@@ -218,6 +237,24 @@ export default function UploadPage() {
             >
               Or choose a saved video
             </button>
+          </div>
+        )}
+
+        {/* View uploads link */}
+        {!recording && (
+          <div style={{ textAlign: "center", marginBottom: 24 }}>
+            <Link
+              href="/uploads"
+              style={{
+                color: "#444", fontSize: 13, fontWeight: 500,
+                textDecoration: "underline", textUnderlineOffset: "3px",
+                fontFamily: "'Outfit', sans-serif", transition: "color 0.2s",
+              }}
+              onMouseOver={e => (e.currentTarget.style.color = "#888")}
+              onMouseOut={e => (e.currentTarget.style.color = "#444")}
+            >
+              View my uploads
+            </Link>
           </div>
         )}
 
