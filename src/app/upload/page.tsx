@@ -17,8 +17,6 @@ export default function UploadPage() {
   const recordInputRef = useRef<HTMLInputElement>(null);
 
   const [recording, setRecording] = useState(false);
-  const [countdown, setCountdown] = useState(MAX_RECORD_SEC);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── shared upload logic ───────────────────────────────────────────────────
   async function handleUpload(uploadFile: File) {
@@ -88,21 +86,12 @@ export default function UploadPage() {
   function startRecording() {
     setStatus("");
     setFile(null);
-    setCountdown(MAX_RECORD_SEC);
     setRecording(true);
-    countdownRef.current = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) { clearInterval(countdownRef.current!); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
     recordInputRef.current?.click();
   }
 
   function onRecordingComplete(e: React.ChangeEvent<HTMLInputElement>) {
-    clearInterval(countdownRef.current!);
     setRecording(false);
-    setCountdown(MAX_RECORD_SEC);
     const f = e.target.files?.[0] ?? null;
     if (!f) { setStatus("No video captured."); return; }
     setFile(f);
@@ -207,7 +196,6 @@ export default function UploadPage() {
             marginBottom: 20,
           }}>
             <span><span className="recording-dot" style={{ background: "#e8622c" }} />Recording…</span>
-            <span style={{ fontFamily: "monospace", fontSize: 16 }}>{fmt(countdown)} remaining</span>
           </div>
         ) : (
           <button
