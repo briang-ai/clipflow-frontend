@@ -1,14 +1,13 @@
 "use client";
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import { useRouter } from "next/navigation";
 
-const MAX_RECORD_SEC = 180; // 3 minutes
-
 export default function UploadPage() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
   const router = useRouter();
 
   const [file, setFile] = useState<File | null>(null);
@@ -90,16 +89,13 @@ export default function UploadPage() {
     setRecording(true);
     recordInputRef.current?.click();
 
-    // If user dismisses camera without recording, onChange won't fire on mobile.
-    // Listen for the page regaining focus and reset recording state if no file arrived.
     const onFocus = () => {
       setTimeout(() => {
         setRecording(prev => {
-          // Only reset if we're still in recording state (no file was selected)
           if (prev && !recordInputRef.current?.files?.length) return false;
           return prev;
         });
-      }, 500); // small delay to let onChange fire first if a file was selected
+      }, 500);
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibility);
     };
@@ -117,12 +113,6 @@ export default function UploadPage() {
     setFile(f);
     setStatus("");
     handleUpload(f);
-  }
-
-  function fmt(sec: number) {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
   }
 
   // ── auth guards ───────────────────────────────────────────────────────────
@@ -172,10 +162,19 @@ export default function UploadPage() {
         .btn-upload:hover{opacity:0.9}
         .btn-upload:disabled{background:#222;color:#555;cursor:not-allowed;opacity:1}
 
+        .btn-signout{
+          background:none;border:none;cursor:pointer;
+          color:#333;font-size:12px;font-weight:500;
+          font-family:'Outfit',sans-serif;
+          transition:color 0.2s;text-decoration:underline;
+          text-underline-offset:3px;padding:0;
+        }
+        .btn-signout:hover{color:#666}
+
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
         .recording-dot{
           display:inline-block;width:10px;height:10px;border-radius:50%;
-          background:#fff;margin-right:8px;
+          background:#e8622c;margin-right:8px;
           animation:pulse 1s ease-in-out infinite;
         }
       `}</style>
@@ -186,9 +185,12 @@ export default function UploadPage() {
         padding: "48px 24px", maxWidth: 520, margin: "0 auto",
       }}>
 
-        {/* Logo */}
-        <div style={{ marginBottom: 36 }}>
+        {/* Logo + sign out row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 36 }}>
           <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
+          <button className="btn-signout" onClick={() => signOut({ redirectUrl: "/sign-in" })}>
+            Sign out
+          </button>
         </div>
 
         {/* Title */}
@@ -212,10 +214,10 @@ export default function UploadPage() {
             width: "100%", padding: "18px 24px", borderRadius: 16,
             background: "rgba(232,98,44,0.08)", border: "1px solid rgba(232,98,44,0.25)",
             fontSize: 15, fontWeight: 600, color: "#e8622c",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
+            display: "flex", alignItems: "center",
             marginBottom: 20,
           }}>
-            <span><span className="recording-dot" style={{ background: "#e8622c" }} />Recording…</span>
+            <span><span className="recording-dot" />Recording…</span>
           </div>
         ) : (
           <button

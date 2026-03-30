@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 
 type UploadRow = {
@@ -71,6 +71,7 @@ async function fetchReelsForUploads(uploadIds: string[]): Promise<Record<string,
 
 export default function UploadsPage() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [error, setError] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
@@ -79,6 +80,7 @@ export default function UploadsPage() {
   const [compileError, setCompileError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
+  const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
   const [confirmModal, setConfirmModal] = useState<{
     mode: "single" | "bulk";
     uploadIds: string[];
@@ -131,7 +133,6 @@ export default function UploadsPage() {
     setCompileError("");
     setCompilingGroup(groupKey);
     try {
-      // Collect hit clip IDs across all uploads in this game group
       const allHitClipIds: string[] = [];
       await Promise.all(
         group.map(async u => {
@@ -153,14 +154,10 @@ export default function UploadsPage() {
         return;
       }
 
-      // POST compile request — backend derives user_id, player_name, game_date
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          upload_id: group[0].id,
-          clip_ids: allHitClipIds,
-        }),
+        body: JSON.stringify({ upload_id: group[0].id, clip_ids: allHitClipIds }),
       });
 
       if (!res.ok) {
@@ -169,7 +166,6 @@ export default function UploadsPage() {
         return;
       }
 
-      // Refresh reels for ALL uploads in this group so the reel card appears
       const fresh = await fetchReelsForUploads(group.map(u => u.id));
       setReelsByUpload(prev => ({ ...prev, ...fresh }));
     } catch (e: any) {
@@ -252,6 +248,26 @@ export default function UploadsPage() {
     const url = await getReelUrl(reelId);
     if (!url) { win?.close(); return; }
     if (win) win.location.href = url;
+  }
+
+  async function deleteReel(reelId: string, uploadId: string) {
+    setDeletingReelIds(prev => new Set([...prev, reelId]));
+    try {
+      const res = await fetch(`${API_BASE}/api/reels/${reelId}`, { method: "DELETE" });
+      if (!res.ok) { setCompileError(await res.text()); return; }
+      setReelsByUpload(prev => ({
+        ...prev,
+        [uploadId]: (prev[uploadId] ?? []).filter(r => r.id !== reelId),
+      }));
+    } catch (e: any) {
+      setCompileError(`Delete failed: ${String(e)}`);
+    } finally {
+      setDeletingReelIds(prev => {
+        const next = new Set(prev);
+        next.delete(reelId);
+        return next;
+      });
+    }
   }
 
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
@@ -349,6 +365,9 @@ export default function UploadsPage() {
         .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px}
         .modal{background:#141414;border:1px solid #2a2a2a;border-radius:20px;padding:28px 24px;max-width:400px;width:100%}
 
+        .btn-signout{background:none;border:none;cursor:pointer;color:#333;font-size:12px;font-weight:500;font-family:'Outfit',sans-serif;transition:color 0.2s;text-decoration:underline;text-underline-offset:3px;padding:0}
+        .btn-signout:hover{color:#666}
+
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{display:inline-block;width:13px;height:13px;border:2px solid #333;border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px}
       `}</style>
@@ -382,9 +401,12 @@ export default function UploadsPage() {
 
       <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit', -apple-system, system-ui, sans-serif", padding: "48px 24px", maxWidth: 700, margin: "0 auto" }}>
 
-        {/* Logo */}
-        <div style={{ marginBottom: 36 }}>
+        {/* Logo + sign out row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 36 }}>
           <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
+          <button className="btn-signout" onClick={() => signOut({ redirectUrl: "/sign-in" })}>
+            Sign out
+          </button>
         </div>
 
         {/* Beta badge */}
@@ -507,6 +529,14 @@ export default function UploadsPage() {
                           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                             <button className="btn-primary" onClick={() => openReel(reel.id)}>▶ Play</button>
                             <button className="btn-secondary" onClick={() => downloadReel(reel.id, reel.player_name, reel.game_date)}>⬇ Download</button>
+                            <button
+                              className="btn-trash"
+                              onClick={() => deleteReel(reel.id, group.flatMap(u => (reelsByUpload[u.id] ?? []).find(r => r.id === reel.id) ? [u.id] : [])[0])}
+                              disabled={deletingReelIds.has(reel.id)}
+                              title="Delete this reel"
+                            >
+                              {deletingReelIds.has(reel.id) ? <span className="spinner" /> : "🗑️"}
+                            </button>
                           </div>
                         )}
                       </div>
