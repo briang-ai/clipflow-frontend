@@ -82,6 +82,7 @@ export default function UploadsPage() {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
   const [copiedReelId, setCopiedReelId] = useState<string>("");
+  const [watermarkByGroup, setWatermarkByGroup] = useState<Record<string, boolean>>({});
   const [confirmModal, setConfirmModal] = useState<{
     mode: "single" | "bulk";
     uploadIds: string[];
@@ -156,7 +157,11 @@ export default function UploadsPage() {
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ upload_id: group[0].id, clip_ids: allHitClipIds }),
+        body: JSON.stringify({
+          upload_id: group[0].id,
+          clip_ids: allHitClipIds,
+          watermark: watermarkByGroup[groupKey] !== false, // default true
+        }),
       });
       if (!res.ok) { setCompileError(await res.text()); setCompilingGroup(""); return; }
       const fresh = await fetchReelsForUploads(group.map(u => u.id));
@@ -477,9 +482,20 @@ export default function UploadsPage() {
                       <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>{group.length} upload{group.length !== 1 ? "s" : ""}</div>
                     </div>
                   </div>
-                  <button className="btn-compile" onClick={() => compileGroup(group, groupKey)} disabled={isCompiling}>
-                    {isCompiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
-                  </button>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                    <button className="btn-compile" onClick={() => compileGroup(group, groupKey)} disabled={isCompiling}>
+                      {isCompiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
+                    </button>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "#555", userSelect: "none" }}>
+                      <input
+                        type="checkbox"
+                        checked={watermarkByGroup[groupKey] !== false}
+                        onChange={e => setWatermarkByGroup(prev => ({ ...prev, [groupKey]: e.target.checked }))}
+                        style={{ accentColor: "#e8622c", width: 12, height: 12 }}
+                      />
+                      clipflow.pro watermark
+                    </label>
+                  </div>
                 </div>
 
                 <div className="game-body">
