@@ -81,6 +81,7 @@ export default function UploadsPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
+  const [copiedReelId, setCopiedReelId] = useState<string>("");
   const [confirmModal, setConfirmModal] = useState<{
     mode: "single" | "bulk";
     uploadIds: string[];
@@ -147,25 +148,17 @@ export default function UploadsPage() {
           } catch { /* silent */ }
         })
       );
-
       if (!allHitClipIds.length) {
         setCompileError("No hit clips found across this game's uploads.");
         setCompilingGroup("");
         return;
       }
-
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: group[0].id, clip_ids: allHitClipIds }),
       });
-
-      if (!res.ok) {
-        setCompileError(await res.text());
-        setCompilingGroup("");
-        return;
-      }
-
+      if (!res.ok) { setCompileError(await res.text()); setCompilingGroup(""); return; }
       const fresh = await fetchReelsForUploads(group.map(u => u.id));
       setReelsByUpload(prev => ({ ...prev, ...fresh }));
     } catch (e: any) {
@@ -214,24 +207,12 @@ export default function UploadsPage() {
         });
       }
       setUploads(prev => prev.filter(u => !uploadIds.includes(u.id)));
-      setSelectedIds(prev => {
-        const next = new Set(prev);
-        uploadIds.forEach(id => next.delete(id));
-        return next;
-      });
-      setReelsByUpload(prev => {
-        const next = { ...prev };
-        uploadIds.forEach(id => delete next[id]);
-        return next;
-      });
+      setSelectedIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
+      setReelsByUpload(prev => { const next = { ...prev }; uploadIds.forEach(id => delete next[id]); return next; });
     } catch (e: any) {
       setError(`Delete failed: ${String(e)}`);
     } finally {
-      setDeletingIds(prev => {
-        const next = new Set(prev);
-        uploadIds.forEach(id => next.delete(id));
-        return next;
-      });
+      setDeletingIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
     }
   }
 
@@ -250,6 +231,19 @@ export default function UploadsPage() {
     if (win) win.location.href = url;
   }
 
+  async function shareReel(reelId: string) {
+    const shareUrl = `${window.location.origin}/share/${reelId}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Check out my highlight reel!", url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopiedReelId(reelId);
+        setTimeout(() => setCopiedReelId(""), 2000);
+      }
+    } catch { /* user cancelled share */ }
+  }
+
   async function deleteReel(reelId: string, uploadId: string) {
     setDeletingReelIds(prev => new Set([...prev, reelId]));
     try {
@@ -262,11 +256,7 @@ export default function UploadsPage() {
     } catch (e: any) {
       setCompileError(`Delete failed: ${String(e)}`);
     } finally {
-      setDeletingReelIds(prev => {
-        const next = new Set(prev);
-        next.delete(reelId);
-        return next;
-      });
+      setDeletingReelIds(prev => { const next = new Set(prev); next.delete(reelId); return next; });
     }
   }
 
@@ -274,9 +264,8 @@ export default function UploadsPage() {
     const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
     if (!url) { win?.close(); return; }
-    if (win) {
-      win.location.href = url;
-    } else {
+    if (win) { win.location.href = url; }
+    else {
       const a = document.createElement("a");
       a.href = url; a.download = `highlight_${playerName}_${gameDate}.mp4`;
       a.target = "_blank"; a.rel = "noopener noreferrer";
@@ -294,9 +283,8 @@ export default function UploadsPage() {
       const data = await res.json();
       const url = data?.download_url;
       if (!url) { win?.close(); setError("Missing download_url: " + JSON.stringify(data)); return; }
-      if (win) {
-        win.location.href = url;
-      } else {
+      if (win) { win.location.href = url; }
+      else {
         const a = document.createElement("a");
         a.href = url; a.download = filename; a.target = "_blank"; a.rel = "noopener noreferrer";
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -340,6 +328,10 @@ export default function UploadsPage() {
         .btn-secondary{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
         .btn-secondary:hover{border-color:rgba(232,98,44,0.4);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
+
+        .btn-share{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(232,98,44,0.3);color:#e8622c;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,background 0.2s}
+        .btn-share:hover{border-color:#e8622c;background:rgba(232,98,44,0.08)}
+        .btn-share.copied{border-color:#34d399;color:#34d399;background:rgba(52,211,153,0.08)}
 
         .btn-danger{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(239,68,68,0.3);color:#ef4444;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,background 0.2s}
         .btn-danger:hover{border-color:#ef4444;background:rgba(239,68,68,0.08)}
@@ -388,10 +380,7 @@ export default function UploadsPage() {
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button className="btn-secondary" onClick={() => setConfirmModal(null)}>Cancel</button>
-              <button
-                onClick={confirmDelete}
-                style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "#ef4444", color: "#fff", fontWeight: 600, fontSize: 13, fontFamily: "'Outfit',sans-serif", cursor: "pointer" }}
-              >
+              <button onClick={confirmDelete} style={{ padding: "9px 18px", borderRadius: 10, border: "none", background: "#ef4444", color: "#fff", fontWeight: 600, fontSize: 13, fontFamily: "'Outfit',sans-serif", cursor: "pointer" }}>
                 Yes, delete
               </button>
             </div>
@@ -477,7 +466,6 @@ export default function UploadsPage() {
 
             return (
               <div key={groupKey}>
-                {/* Game header */}
                 <div className="game-header">
                   <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <input type="checkbox" className="cb" checked={allGroupSelected} onChange={() => toggleSelectAll(group)} title="Select all in this game" />
@@ -494,9 +482,7 @@ export default function UploadsPage() {
                   </button>
                 </div>
 
-                {/* Game body */}
                 <div className="game-body">
-
                   {/* Reel cards */}
                   {groupReels.map(reel => (
                     <div key={reel.id} className={`reel-card ${reel.status === "complete" ? "complete" : ""}`}>
@@ -526,9 +512,15 @@ export default function UploadsPage() {
                           )}
                         </div>
                         {reel.status === "complete" && (
-                          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                          <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
                             <button className="btn-primary" onClick={() => openReel(reel.id)}>▶ Play</button>
                             <button className="btn-secondary" onClick={() => downloadReel(reel.id, reel.player_name, reel.game_date)}>⬇ Download</button>
+                            <button
+                              className={`btn-share${copiedReelId === reel.id ? " copied" : ""}`}
+                              onClick={() => shareReel(reel.id)}
+                            >
+                              {copiedReelId === reel.id ? "✓ Copied!" : "🔗 Share"}
+                            </button>
                             <button
                               className="btn-trash"
                               onClick={() => deleteReel(reel.id, group.flatMap(u => (reelsByUpload[u.id] ?? []).find(r => r.id === reel.id) ? [u.id] : [])[0])}
@@ -577,7 +569,6 @@ export default function UploadsPage() {
           })
         )}
 
-        {/* Footer */}
         <p style={{ marginTop: 48, fontSize: 14, fontWeight: 500, letterSpacing: "2px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
           Find Your Flow
         </p>
