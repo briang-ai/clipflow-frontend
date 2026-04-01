@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Nav from "@/components/Nav";
 
 const plans = [
   {
@@ -93,18 +94,11 @@ export default function PlansPage() {
         .plan-card.highlight{border-color:rgba(232,98,44,0.4)}
         .plan-card:hover{border-color:rgba(232,98,44,0.3)}
 
-        .badge{
-          padding:5px 0;text-align:center;
-          font-size:11px;font-weight:700;letter-spacing:1.5px;
-        }
+        .badge{padding:5px 0;text-align:center;font-size:11px;font-weight:700;letter-spacing:1.5px}
         .badge-spacer{height:27px}
 
-        .feature-row{
-          display:flex;gap:10px;padding:5px 0;font-size:13px;
-        }
-        .feature-check{
-          color:#e8622c;font-weight:700;flex-shrink:0;margin-top:1px;
-        }
+        .feature-row{display:flex;gap:10px;padding:5px 0;font-size:13px}
+        .feature-check{color:#e8622c;font-weight:700;flex-shrink:0;margin-top:1px}
         .feature-text{color:#888}
 
         .btn-soon{
@@ -128,18 +122,13 @@ export default function PlansPage() {
         }
       `}</style>
 
+      <Nav />
+
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
         fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
-        padding: "48px 20px", maxWidth: 780, margin: "0 auto",
+        padding: "32px 20px", maxWidth: 780, margin: "0 auto",
       }}>
-
-        {/* Logo */}
-        <div style={{ marginBottom: 36 }}>
-          <Link href="/">
-            <img src="/logo.png" alt="ClipFlow" style={{ width: 140, height: "auto" }} />
-          </Link>
-        </div>
 
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 48 }}>
@@ -175,7 +164,6 @@ export default function PlansPage() {
         }}>
           {plans.map(plan => (
             <div key={plan.id} className={`plan-card${plan.highlight ? " highlight" : ""}`}>
-              {/* Badge row */}
               {plan.badge ? (
                 <div className="badge" style={{ background: plan.badgeColor, color: "#fff" }}>
                   {plan.badge}
@@ -185,12 +173,9 @@ export default function PlansPage() {
               )}
 
               <div style={{ padding: "20px 20px 24px" }}>
-                {/* Plan name */}
                 <div style={{
                   fontSize: 18, fontWeight: 800, marginBottom: 6,
-                  background: plan.highlight
-                    ? "linear-gradient(135deg,#e8622c,#f0a830)"
-                    : "none",
+                  background: plan.highlight ? "linear-gradient(135deg,#e8622c,#f0a830)" : "none",
                   WebkitBackgroundClip: plan.highlight ? "text" : "unset",
                   WebkitTextFillColor: plan.highlight ? "transparent" : plan.color,
                   color: plan.color,
@@ -198,12 +183,10 @@ export default function PlansPage() {
                   {plan.label}
                 </div>
 
-                {/* Description */}
                 <div style={{ fontSize: 13, color: "#555", marginBottom: 20, lineHeight: 1.5, minHeight: 40 }}>
                   {plan.description}
                 </div>
 
-                {/* Price placeholder */}
                 <div style={{
                   padding: "10px 14px", borderRadius: 10,
                   background: "#0f0f0f", border: "1px solid #1e1e1e",
@@ -212,7 +195,6 @@ export default function PlansPage() {
                   <span style={{ fontSize: 13, color: "#333", fontWeight: 500 }}>Pricing coming soon</span>
                 </div>
 
-                {/* Features */}
                 <div style={{ marginBottom: 20 }}>
                   {plan.features.map((f, i) => (
                     <div key={i} className="feature-row">
@@ -222,7 +204,6 @@ export default function PlansPage() {
                   ))}
                 </div>
 
-                {/* CTA */}
                 <button className="btn-soon">{plan.cta}</button>
               </div>
             </div>
@@ -252,7 +233,6 @@ export default function PlansPage() {
           </Link>
         </div>
 
-        {/* Footer */}
         <p style={{
           textAlign: "center", fontSize: 13, fontWeight: 500,
           letterSpacing: "2px", textTransform: "uppercase",

@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
+import Nav from "@/components/Nav";
 
 type UploadRow = {
   id: string;
@@ -71,7 +72,6 @@ async function fetchReelsForUploads(uploadIds: string[]): Promise<Record<string,
 
 export default function UploadsPage() {
   const { isLoaded, isSignedIn, user } = useUser();
-  const { signOut } = useClerk();
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [error, setError] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
@@ -160,7 +160,7 @@ export default function UploadsPage() {
         body: JSON.stringify({
           upload_id: group[0].id,
           clip_ids: allHitClipIds,
-          watermark: watermarkByGroup[groupKey] !== false, // default true
+          watermark: watermarkByGroup[groupKey] !== false,
         }),
       });
       if (!res.ok) { setCompileError(await res.text()); setCompilingGroup(""); return; }
@@ -246,7 +246,7 @@ export default function UploadsPage() {
         setCopiedReelId(reelId);
         setTimeout(() => setCopiedReelId(""), 2000);
       }
-    } catch { /* user cancelled share */ }
+    } catch { /* user cancelled */ }
   }
 
   async function deleteReel(reelId: string, uploadId: string) {
@@ -357,17 +357,16 @@ export default function UploadsPage() {
         .btn-trash:hover{color:#ef4444;border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06)}
         .btn-trash:disabled{opacity:0.3;cursor:not-allowed}
 
-        .bulk-bar{position:sticky;top:12px;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 18px;border-radius:12px;background:#1a0e0e;border:1px solid rgba(239,68,68,0.3);margin-bottom:20px}
+        .bulk-bar{position:sticky;top:68px;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 18px;border-radius:12px;background:#1a0e0e;border:1px solid rgba(239,68,68,0.3);margin-bottom:20px}
 
         .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px}
         .modal{background:#141414;border:1px solid #2a2a2a;border-radius:20px;padding:28px 24px;max-width:400px;width:100%}
 
-        .btn-signout{background:none;border:none;cursor:pointer;color:#333;font-size:12px;font-weight:500;font-family:'Outfit',sans-serif;transition:color 0.2s;text-decoration:underline;text-underline-offset:3px;padding:0}
-        .btn-signout:hover{color:#666}
-
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{display:inline-block;width:13px;height:13px;border:2px solid #333;border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px}
       `}</style>
+
+      <Nav />
 
       {/* ── Confirm delete modal ─────────────────────────────────────────── */}
       {confirmModal && (
@@ -393,42 +392,24 @@ export default function UploadsPage() {
         </div>
       )}
 
-      <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit', -apple-system, system-ui, sans-serif", padding: "48px 24px", maxWidth: 700, margin: "0 auto" }}>
-
-        {/* Logo + sign out row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 36 }}>
-          <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
-          <button className="btn-signout" onClick={() => signOut({ redirectUrl: "/sign-in" })}>
-            Sign out
-          </button>
-        </div>
-
-        {/* Beta badge */}
-        <div style={{ display: "inline-block", padding: "6px 16px", borderRadius: 24, fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: 24, background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", border: "1px solid rgba(232,98,44,0.3)" }}>
-          Beta Testing
-        </div>
+      <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit', -apple-system, system-ui, sans-serif", padding: "32px 24px", maxWidth: 700, margin: "0 auto" }}>
 
         {/* Header row */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px" }}>
+          <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px" }}>
             My{" "}
             <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
               uploads
             </span>
           </h1>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a
-              href="mailto:info@clipflow.pro?subject=ClipFlow%20Beta%20Feedback"
-              style={{ padding: "10px 20px", borderRadius: 12, background: "#141414", border: "1px solid rgba(232,98,44,0.35)", color: "#f0a830", fontWeight: 600, fontSize: 14, fontFamily: "'Outfit', sans-serif", textDecoration: "none", whiteSpace: "nowrap" }}
-              onMouseOver={e => (e.currentTarget.style.borderColor = "#e8622c")}
-              onMouseOut={e => (e.currentTarget.style.borderColor = "rgba(232,98,44,0.35)")}
-            >
-              💬 Send Feedback
-            </a>
-            <Link href="/upload" style={{ padding: "10px 20px", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#e8622c,#f0a830)", color: "#fff", fontWeight: 600, fontSize: 14, fontFamily: "'Outfit', sans-serif", textDecoration: "none", whiteSpace: "nowrap" }}>
-              + Record / Upload
-            </Link>
-          </div>
+          <a
+            href="mailto:info@clipflow.pro?subject=ClipFlow%20Beta%20Feedback"
+            style={{ padding: "9px 18px", borderRadius: 12, background: "#141414", border: "1px solid rgba(232,98,44,0.35)", color: "#f0a830", fontWeight: 600, fontSize: 13, fontFamily: "'Outfit', sans-serif", textDecoration: "none", whiteSpace: "nowrap" }}
+            onMouseOver={e => (e.currentTarget.style.borderColor = "#e8622c")}
+            onMouseOut={e => (e.currentTarget.style.borderColor = "rgba(232,98,44,0.35)")}
+          >
+            💬 Feedback
+          </a>
         </div>
 
         {/* Errors */}

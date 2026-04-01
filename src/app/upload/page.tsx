@@ -1,13 +1,13 @@
 "use client";
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import { useRouter } from "next/navigation";
+import Nav from "@/components/Nav";
 
 export default function UploadPage() {
   const { isLoaded, isSignedIn, user } = useUser();
-  const { signOut } = useClerk();
   const router = useRouter();
 
   const [file, setFile] = useState<File | null>(null);
@@ -162,15 +162,6 @@ export default function UploadPage() {
         .btn-upload:hover{opacity:0.9}
         .btn-upload:disabled{background:#222;color:#555;cursor:not-allowed;opacity:1}
 
-        .btn-signout{
-          background:none;border:none;cursor:pointer;
-          color:#333;font-size:12px;font-weight:500;
-          font-family:'Outfit',sans-serif;
-          transition:color 0.2s;text-decoration:underline;
-          text-underline-offset:3px;padding:0;
-        }
-        .btn-signout:hover{color:#666}
-
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
         .recording-dot{
           display:inline-block;width:10px;height:10px;border-radius:50%;
@@ -179,20 +170,13 @@ export default function UploadPage() {
         }
       `}</style>
 
+      <Nav />
+
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
         fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
         padding: "48px 24px", maxWidth: 520, margin: "0 auto",
       }}>
-
-        {/* Logo + sign out row */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 36 }}>
-          <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
-          <button className="btn-signout" onClick={() => signOut({ redirectUrl: "/sign-in" })}>
-            Sign out
-          </button>
-        </div>
-
         {/* Title */}
         <h1 style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px", marginBottom: 40 }}>
           Record{" "}
@@ -240,24 +224,6 @@ export default function UploadPage() {
             >
               Or choose a saved video
             </button>
-          </div>
-        )}
-
-        {/* View uploads link */}
-        {!recording && (
-          <div style={{ textAlign: "center", marginBottom: 24 }}>
-            <Link
-              href="/uploads"
-              style={{
-                color: "#444", fontSize: 13, fontWeight: 500,
-                textDecoration: "underline", textUnderlineOffset: "3px",
-                fontFamily: "'Outfit', sans-serif", transition: "color 0.2s",
-              }}
-              onMouseOver={e => (e.currentTarget.style.color = "#888")}
-              onMouseOut={e => (e.currentTarget.style.color = "#444")}
-            >
-              View my uploads
-            </Link>
           </div>
         )}
 
