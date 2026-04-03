@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import Nav from "@/components/Nav";
+import RecordFAB from "@/components/RecordFAB";
 
 type UploadRow = {
   id: string;
@@ -367,9 +368,6 @@ export default function UploadsPage() {
       `}</style>
 
       <Nav />
-      import RecordFAB from "@/components/RecordFAB";
-
-      // in JSX, after <Nav />:
       <RecordFAB />
 
       {/* ── Confirm delete modal ─────────────────────────────────────────── */}
