@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import Nav from "@/components/Nav";
+import RecordFAB from "@/components/RecordFAB";
 
 type ClipRow = {
   id: string;
@@ -245,11 +246,8 @@ export default function UploadDetailPage() {
       `}</style>
 
       <Nav />
-      import RecordFAB from "@/components/RecordFAB";
-
-      // in JSX, after <Nav />:
       <RecordFAB />
-
+      
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
         fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
