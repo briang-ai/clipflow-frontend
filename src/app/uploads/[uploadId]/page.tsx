@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
+import Nav from "@/components/Nav";
 
 type ClipRow = {
   id: string;
@@ -19,16 +20,23 @@ type ClipRow = {
   created_at: string;
 };
 
+type UploadStatus = "created" | "uploaded" | "processing" | "complete" | "error" | string;
+
+const POLL_INTERVAL_MS = 3000;   // poll every 3 seconds
+const MAX_POLL_SECS    = 600;    // give up after 10 minutes
+
 export default function UploadDetailPage() {
   const { isLoaded, isSignedIn } = useUser();
   const params = useParams();
   const uploadId = String(params.uploadId);
 
   const [clips, setClips] = useState<ClipRow[]>([]);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("processing");
   const [error, setError] = useState<string>("");
   const [savingId, setSavingId] = useState<string>("");
   const [openingId, setOpeningId] = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
+  const [pollingSince, setPollingSince] = useState<number>(Date.now());
 
   const [draft, setDraft] = useState<
     Record<string, { player_name: string; jersey_number: string }>
@@ -36,20 +44,46 @@ export default function UploadDetailPage() {
 
   // ── clip polling ────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!uploadId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let lastCount = -1;
-    let unchangedPolls = 0;
+    const startedAt = Date.now();
+    setPollingSince(startedAt);
+    setError("");
 
     async function poll() {
+      if (cancelled) return;
+
+      // Timeout guard
+      if (Date.now() - startedAt > MAX_POLL_SECS * 1000) {
+        if (!cancelled) setError("Processing is taking longer than expected. Please refresh the page to check again.");
+        return;
+      }
+
       try {
+        // Fetch upload status + clips in parallel
+        const [statusRes, clipsRes] = await Promise.all([
+          fetch(`${API_BASE}/api/debug/uploads/${uploadId}/counts`, { cache: "no-store" }),
+          fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, { cache: "no-store" }),
+        ]);
+
         if (cancelled) return;
-        const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, { cache: "no-store" });
-        if (!res.ok) { if (!cancelled) setError(await res.text()); return; }
-        const data = await res.json();
+
+        if (!clipsRes.ok) {
+          setError(await clipsRes.text());
+          return;
+        }
+
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+          setUploadStatus(statusData?.upload?.status ?? "processing");
+        }
+
+        const data = await clipsRes.json();
         const newClips: ClipRow[] = data.clips ?? [];
-        if (cancelled) return;
         setClips(newClips);
+
+        // Seed draft with any unsaved labels
         setDraft(prev => {
           const next = { ...prev };
           for (const c of newClips) {
@@ -58,15 +92,25 @@ export default function UploadDetailPage() {
           }
           return next;
         });
-        if (newClips.length !== lastCount) { lastCount = newClips.length; unchangedPolls = 0; }
-        else unchangedPolls += 1;
-        if (!cancelled && unchangedPolls < 3) timer = setTimeout(poll, 2000);
-      } catch (e: any) { if (!cancelled) setError(String(e)); }
+
+        // Keep polling until upload status is complete or error
+        const status = statusRes.ok ? (await statusRes.json().catch(() => ({}))).upload?.status : null;
+        const done = uploadStatus === "complete" || uploadStatus === "error";
+
+        if (!cancelled && !done) {
+          timer = setTimeout(poll, POLL_INTERVAL_MS);
+        }
+      } catch (e: any) {
+        if (!cancelled) setError("Network error: " + String(e));
+      }
     }
 
-    if (uploadId) { setError(""); poll(); }
+    poll();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [uploadId]);
+
+  // Stop polling once upload is complete
+  const isProcessing = uploadStatus !== "complete" && uploadStatus !== "error";
 
   // ── clip helpers ────────────────────────────────────────────────────────────
   async function saveLabels(clipId: string) {
@@ -96,10 +140,10 @@ export default function UploadDetailPage() {
   async function openClip(clipId: string) {
     try {
       setError(""); setOpeningId(clipId);
-      const newWindow = window.open("", "_blank");
+      const win = window.open("", "_blank");
       const url = await getClipUrl(clipId);
-      if (!url) { newWindow?.close(); return; }
-      if (newWindow) newWindow.location.href = url;
+      if (!url) { win?.close(); return; }
+      if (win) win.location.href = url;
       else {
         const a = document.createElement("a");
         a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
@@ -112,10 +156,10 @@ export default function UploadDetailPage() {
   async function downloadClip(clipId: string, label: string) {
     try {
       setError(""); setDownloadingId(clipId);
-      const newWindow = window.open("", "_blank");
+      const win = window.open("", "_blank");
       const url = await getClipUrl(clipId);
-      if (!url) { newWindow?.close(); return; }
-      if (newWindow) newWindow.location.href = url;
+      if (!url) { win?.close(); return; }
+      if (win) win.location.href = url;
       else {
         const a = document.createElement("a");
         a.href = url; a.download = `${label || clipId}.mp4`;
@@ -133,6 +177,9 @@ export default function UploadDetailPage() {
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
+  const hitClips   = clips.filter(c => c.is_hit === true);
+  const otherClips = clips.filter(c => c.is_hit !== true);
+
   return (
     <>
       <style>{`
@@ -146,6 +193,7 @@ export default function UploadDetailPage() {
           margin-bottom:12px;transition:border-color 0.2s;
         }
         .clip-card:hover{border-color:rgba(232,98,44,0.3)}
+        .clip-card.hit{border-color:rgba(232,98,44,0.25);background:#161010}
 
         .clip-input{
           padding:10px 14px;border-radius:10px;
@@ -175,42 +223,79 @@ export default function UploadDetailPage() {
         }
         .btn-secondary:hover{border-color:rgba(232,98,44,0.3);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
+
+        .section-label{
+          font-size:11px;font-weight:600;text-transform:uppercase;
+          letter-spacing:1.5px;color:#555;margin-bottom:12px;margin-top:28px;
+        }
+
+        @keyframes spin{to{transform:rotate(360deg)}}
+        .spinner{
+          display:inline-block;width:13px;height:13px;
+          border:2px solid #333;border-top-color:#e8622c;
+          border-radius:50%;animation:spin 0.7s linear infinite;
+          vertical-align:middle;margin-right:6px;
+        }
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+        .pulse-dot{
+          display:inline-block;width:8px;height:8px;border-radius:50%;
+          background:#e8622c;margin-right:8px;
+          animation:pulse 1.2s ease-in-out infinite;vertical-align:middle;
+        }
       `}</style>
+
+      <Nav />
 
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
         fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
-        padding: "48px 24px", maxWidth: 800, margin: "0 auto",
+        padding: "32px 24px", maxWidth: 800, margin: "0 auto",
       }}>
-
-        {/* Logo */}
-        <div style={{ marginBottom: 36 }}>
-          <img src="/logo.png" alt="ClipFlow — Find Your Flow" style={{ width: 140, height: "auto" }} />
-        </div>
 
         {/* Back link */}
         <Link href="/uploads" style={{
-          fontSize: 13, color: "#666", textDecoration: "none",
+          fontSize: 13, color: "#555", textDecoration: "none",
           display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 24,
         }}
           onMouseOver={e => (e.currentTarget.style.color = "#e8622c")}
-          onMouseOut={e => (e.currentTarget.style.color = "#666")}
+          onMouseOut={e => (e.currentTarget.style.color = "#555")}
         >
           ← Back to uploads
         </Link>
 
         {/* Header */}
-        <h1 style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px", marginBottom: 8 }}>
-          <span style={{
-            background: "linear-gradient(135deg,#e8622c,#f0a830)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-          }}>
-            Clips
+        <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px", marginBottom: 8 }}>
+          View{" "}
+          <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            clips
           </span>
         </h1>
-        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#555", marginBottom: 32 }}>
-          Upload ID: {uploadId}
-        </div>
+
+        {/* Processing banner */}
+        {isProcessing && (
+          <div style={{
+            marginBottom: 24, padding: "14px 18px", borderRadius: 14,
+            background: "rgba(232,98,44,0.06)", border: "1px solid rgba(232,98,44,0.2)",
+            color: "#f0a830", fontSize: 14, display: "flex", alignItems: "center",
+          }}>
+            <span className="pulse-dot" />
+            {clips.length === 0
+              ? "Processing your video — clips will appear here as they're ready…"
+              : `Processing… ${clips.length} clip${clips.length !== 1 ? "s" : ""} found so far`}
+          </div>
+        )}
+
+        {/* Complete banner */}
+        {uploadStatus === "complete" && clips.length > 0 && (
+          <div style={{
+            marginBottom: 24, padding: "14px 18px", borderRadius: 14,
+            background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)",
+            color: "#34d399", fontSize: 14,
+          }}>
+            ✅ Processing complete — {clips.length} clip{clips.length !== 1 ? "s" : ""} found,{" "}
+            <strong>{hitClips.length} hit{hitClips.length !== 1 ? "s" : ""}</strong> detected
+          </div>
+        )}
 
         {/* Error */}
         {error && (
@@ -221,87 +306,33 @@ export default function UploadDetailPage() {
           }}>{error}</div>
         )}
 
-        {/* Clips */}
-        {clips.length === 0 ? (
+        {/* Empty while processing */}
+        {clips.length === 0 && isProcessing && (
           <div style={{
-            padding: "32px 24px", borderRadius: 16,
+            padding: "48px 24px", borderRadius: 16,
             background: "#141414", border: "1px solid #222",
-            color: "#666", fontSize: 15, textAlign: "center",
+            color: "#555", fontSize: 15, textAlign: "center",
           }}>
-            ⏳ Processing clips… this page will refresh automatically.
+            <span className="spinner" />Waiting for clips…
           </div>
-        ) : (
-          clips.map(c => (
-            <div key={c.id} className="clip-card">
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 10 }}>{c.label || "Clip"}</div>
-
-                  {/* Hit scoring */}
-                  <div style={{ fontSize: 13, color: "#999", marginBottom: 6 }}>
-                    <span style={{ marginRight: 6 }}>
-                      {c.is_hit === true ? "✅ Hit" : c.is_hit === false ? "❌ Not a hit" : "🤷 Not scored"}
-                    </span>
-                    {typeof c.ai_confidence === "number" && (
-                      <span style={{
-                        padding: "2px 8px", borderRadius: 20,
-                        background: "#1a1a1a", border: "1px solid #2a2a2a",
-                        fontSize: 12, fontFamily: "monospace",
-                      }}>
-                        {Math.round(c.ai_confidence * 100)}%
-                      </span>
-                    )}
-                  </div>
-                  {c.ai_reason && (
-                    <div style={{ fontSize: 13, color: "#666", marginBottom: 8, lineHeight: 1.5 }}>{c.ai_reason}</div>
-                  )}
-                  <div style={{ fontSize: 12, color: "#555", marginBottom: 4 }}>
-                    {new Date(c.created_at).toLocaleString()}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: "#444" }}>{c.s3_key}</div>
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
-                  <button className="btn-primary" onClick={() => openClip(c.id)}
-                    disabled={openingId === c.id || downloadingId === c.id}>
-                    {openingId === c.id ? "Opening…" : "▶ Play"}
-                  </button>
-                  <button className="btn-secondary" onClick={() => downloadClip(c.id, c.label || c.id)}
-                    disabled={downloadingId === c.id || openingId === c.id}>
-                    {downloadingId === c.id ? "…" : "⬇ Download"}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ height: 1, background: "#222", margin: "14px 0" }} />
-
-              {/* Label inputs */}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <input className="clip-input" placeholder="Player name"
-                  value={draft[c.id]?.player_name || ""}
-                  onChange={e => setDraft(prev => ({
-                    ...prev,
-                    [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), player_name: e.target.value },
-                  }))}
-                  style={{ minWidth: 200 }}
-                />
-                <input className="clip-input" placeholder="Jersey #"
-                  value={draft[c.id]?.jersey_number || ""}
-                  onChange={e => setDraft(prev => ({
-                    ...prev,
-                    [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), jersey_number: e.target.value },
-                  }))}
-                  style={{ width: 110 }}
-                />
-                <button className="btn-secondary" onClick={() => saveLabels(c.id)} disabled={savingId === c.id}>
-                  {savingId === c.id ? "Saving…" : "Save"}
-                </button>
-              </div>
-            </div>
-          ))
         )}
 
-        {/* Footer */}
+        {/* Hit clips */}
+        {hitClips.length > 0 && (
+          <>
+            <div className="section-label">🎯 Hits detected ({hitClips.length})</div>
+            {hitClips.map(c => <ClipCard key={c.id} c={c} draft={draft} setDraft={setDraft} savingId={savingId} openingId={openingId} downloadingId={downloadingId} saveLabels={saveLabels} openClip={openClip} downloadClip={downloadClip} isHit />)}
+          </>
+        )}
+
+        {/* Other clips */}
+        {otherClips.length > 0 && (
+          <>
+            <div className="section-label">All clips ({otherClips.length})</div>
+            {otherClips.map(c => <ClipCard key={c.id} c={c} draft={draft} setDraft={setDraft} savingId={savingId} openingId={openingId} downloadingId={downloadingId} saveLabels={saveLabels} openClip={openClip} downloadClip={downloadClip} isHit={false} />)}
+          </>
+        )}
+
         <p style={{
           marginTop: 48, fontSize: 14, fontWeight: 500,
           letterSpacing: "2px", textTransform: "uppercase",
@@ -312,5 +343,66 @@ export default function UploadDetailPage() {
         </p>
       </div>
     </>
+  );
+}
+
+// ── Clip card sub-component ──────────────────────────────────────────────────
+function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, saveLabels, openClip, downloadClip, isHit }: {
+  c: ClipRow;
+  draft: Record<string, { player_name: string; jersey_number: string }>;
+  setDraft: React.Dispatch<React.SetStateAction<Record<string, { player_name: string; jersey_number: string }>>>;
+  savingId: string;
+  openingId: string;
+  downloadingId: string;
+  saveLabels: (id: string) => void;
+  openClip: (id: string) => void;
+  downloadClip: (id: string, label: string) => void;
+  isHit: boolean;
+}) {
+  return (
+    <div className={`clip-card${isHit ? " hit" : ""}`}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>{c.label || "Clip"}</div>
+          <div style={{ fontSize: 13, color: "#888", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span>{c.is_hit === true ? "✅ Hit" : c.is_hit === false ? "❌ Not a hit" : "🤷 Unscored"}</span>
+            {typeof c.ai_confidence === "number" && (
+              <span style={{ padding: "2px 8px", borderRadius: 20, background: "#1a1a1a", border: "1px solid #2a2a2a", fontSize: 12, fontFamily: "monospace" }}>
+                {Math.round(c.ai_confidence * 100)}%
+              </span>
+            )}
+          </div>
+          {c.ai_reason && (
+            <div style={{ fontSize: 13, color: "#555", marginBottom: 8, lineHeight: 1.5 }}>{c.ai_reason}</div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <button className="btn-primary" onClick={() => openClip(c.id)} disabled={openingId === c.id || downloadingId === c.id}>
+            {openingId === c.id ? "…" : "▶ Play"}
+          </button>
+          <button className="btn-secondary" onClick={() => downloadClip(c.id, c.label || c.id)} disabled={downloadingId === c.id || openingId === c.id}>
+            {downloadingId === c.id ? "…" : "⬇"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: "#222", margin: "14px 0" }} />
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="clip-input" placeholder="Player name"
+          value={draft[c.id]?.player_name || ""}
+          onChange={e => setDraft(prev => ({ ...prev, [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), player_name: e.target.value } }))}
+          style={{ minWidth: 180 }}
+        />
+        <input className="clip-input" placeholder="Jersey #"
+          value={draft[c.id]?.jersey_number || ""}
+          onChange={e => setDraft(prev => ({ ...prev, [c.id]: { ...(prev[c.id] ?? { player_name: "", jersey_number: "" }), jersey_number: e.target.value } }))}
+          style={{ width: 100 }}
+        />
+        <button className="btn-secondary" onClick={() => saveLabels(c.id)} disabled={savingId === c.id}>
+          {savingId === c.id ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
   );
 }
