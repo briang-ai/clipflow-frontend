@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+import RecordFAB from "@/components/RecordFAB";
 
 const plans = [
   {
@@ -123,11 +124,8 @@ export default function PlansPage() {
       `}</style>
 
       <Nav />
-      import RecordFAB from "@/components/RecordFAB";
-
-      // in JSX, after <Nav />:
       <RecordFAB />
-
+      
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
         fontFamily: "'Outfit', -apple-system, system-ui, sans-serif",
