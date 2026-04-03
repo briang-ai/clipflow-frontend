@@ -367,6 +367,10 @@ export default function UploadsPage() {
       `}</style>
 
       <Nav />
+      import RecordFAB from "@/components/RecordFAB";
+
+      // in JSX, after <Nav />:
+      <RecordFAB />
 
       {/* ── Confirm delete modal ─────────────────────────────────────────── */}
       {confirmModal && (

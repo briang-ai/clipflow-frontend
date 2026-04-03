@@ -245,6 +245,10 @@ export default function UploadDetailPage() {
       `}</style>
 
       <Nav />
+      import RecordFAB from "@/components/RecordFAB";
+
+      // in JSX, after <Nav />:
+      <RecordFAB />
 
       <div style={{
         background: "#0a0a0a", minHeight: "100vh",
