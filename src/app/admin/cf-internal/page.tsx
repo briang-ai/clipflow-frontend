@@ -25,18 +25,38 @@ type UserRow = {
   last_upload_at: string;
 };
 
+type AnthropicBalance = {
+  ok: boolean;
+  available_usd?: number | null;
+  error?: string;
+  raw?: any;
+};
+
 export default function AdminPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [balance, setBalance] = useState<AnthropicBalance | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshingBalance, setRefreshingBalance] = useState(false);
 
   const adminHeaders = {
     "Content-Type": "application/json",
     "x-admin-secret": ADMIN_SECRET,
     "x-clerk-user-id": user?.id ?? "",
   };
+
+  async function fetchBalance() {
+    setRefreshingBalance(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/admin/anthropic-balance`, {
+        headers: adminHeaders, cache: "no-store",
+      });
+      if (res.ok) setBalance(await res.json());
+    } catch { /* silent */ }
+    finally { setRefreshingBalance(false); }
+  }
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !user) return;
@@ -63,6 +83,9 @@ export default function AdminPage() {
         const usersData = await usersRes.json();
         setStats(statsData);
         setUsers(usersData.users ?? []);
+
+        // Load balance in parallel without blocking the main UI
+        fetchBalance();
       } catch (e: any) {
         setError("Network error: " + String(e));
       } finally {
@@ -90,6 +113,14 @@ export default function AdminPage() {
     URL.revokeObjectURL(url);
   }
 
+  // Determine balance status color
+  function balanceColor(usd: number | null | undefined): string {
+    if (usd === null || usd === undefined) return "#555";
+    if (usd < 2) return "#ef4444";   // red — critically low
+    if (usd < 10) return "#f0a830";  // amber — top up soon
+    return "#34d399";                // green — healthy
+  }
+
   const loadingStyle = {
     background: "#0a0a0a", minHeight: "100vh", padding: 24,
     color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif",
@@ -114,6 +145,13 @@ export default function AdminPage() {
         .stat-value{font-size:32px;font-weight:700;line-height:1}
         .stat-sub{font-size:12px;color:#555;margin-top:4px}
 
+        .balance-card{
+          padding:20px 24px;border-radius:14px;
+          background:#141414;border:1px solid #222;
+          display:flex;align-items:center;justify-content:space-between;
+          gap:16px;flex-wrap:wrap;margin-bottom:40px;
+        }
+
         .table-wrap{overflow-x:auto;border-radius:14px;border:1px solid #222}
         table{width:100%;border-collapse:collapse;font-size:13px}
         thead tr{background:#141414;border-bottom:1px solid #222}
@@ -136,10 +174,23 @@ export default function AdminPage() {
         .btn-export:hover{opacity:0.9}
         .btn-export:disabled{opacity:0.4;cursor:not-allowed}
 
+        .btn-refresh{
+          padding:7px 14px;border-radius:10px;
+          background:#1a1a1a;border:1px solid #2a2a2a;
+          color:#888;font-weight:500;font-size:12px;
+          font-family:'Outfit',sans-serif;cursor:pointer;
+          transition:border-color 0.2s,color 0.2s;
+        }
+        .btn-refresh:hover{border-color:rgba(232,98,44,0.4);color:#fff}
+        .btn-refresh:disabled{opacity:0.4;cursor:not-allowed}
+
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{display:inline-block;width:16px;height:16px;border:2px solid #333;
           border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;
           vertical-align:middle}
+        .spinner-sm{display:inline-block;width:11px;height:11px;border:2px solid #333;
+          border-top-color:#888;border-radius:50%;animation:spin 0.7s linear infinite;
+          vertical-align:middle;margin-right:4px}
       `}</style>
 
       <div style={{
@@ -233,6 +284,54 @@ export default function AdminPage() {
                 <div className="stat-value">{stats.hit_rate_pct}%</div>
                 <div className="stat-sub">of classified clips</div>
               </div>
+            </div>
+
+            {/* Anthropic balance */}
+            <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#555", marginBottom: 12 }}>
+              AI Credits
+            </div>
+            <div className="balance-card">
+              <div>
+                <div style={{ fontSize: 13, color: "#555", marginBottom: 6 }}>Anthropic API Balance</div>
+                {balance === null ? (
+                  <div style={{ fontSize: 14, color: "#555" }}>
+                    <span className="spinner-sm" />Loading…
+                  </div>
+                ) : !balance.ok ? (
+                  <div style={{ fontSize: 14, color: "#f0a830" }}>
+                    ⚠ Could not fetch balance
+                    {balance.error && <span style={{ fontSize: 12, color: "#555", marginLeft: 8 }}>{balance.error}</span>}
+                  </div>
+                ) : balance.available_usd !== null && balance.available_usd !== undefined ? (
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                    <span style={{ fontSize: 28, fontWeight: 700, color: balanceColor(balance.available_usd) }}>
+                      ${balance.available_usd.toFixed(2)}
+                    </span>
+                    <span style={{ fontSize: 13, color: "#555" }}>available</span>
+                    {balance.available_usd < 2 && (
+                      <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600 }}>
+                        ⚠ Top up now
+                      </span>
+                    )}
+                    {balance.available_usd >= 2 && balance.available_usd < 10 && (
+                      <span style={{ fontSize: 12, color: "#f0a830", fontWeight: 600 }}>
+                        Top up soon
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 14, color: "#555" }}>Balance unavailable from API</div>
+                )}
+                <div style={{ fontSize: 12, color: "#333", marginTop: 6 }}>
+                  Low balance causes AI hit detection failures.{" "}
+                  <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: "#e8622c", textDecoration: "none" }}>
+                    Top up at console.anthropic.com →
+                  </a>
+                </div>
+              </div>
+              <button className="btn-refresh" onClick={fetchBalance} disabled={refreshingBalance}>
+                {refreshingBalance ? <><span className="spinner-sm" />Refreshing…</> : "↻ Refresh"}
+              </button>
             </div>
 
             {/* User table */}
