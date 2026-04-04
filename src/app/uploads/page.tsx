@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import Nav from "@/components/Nav";
 import RecordFAB from "@/components/RecordFAB";
+import { downloadVideo } from "@/lib/downloadVideo";
 
 type UploadRow = {
   id: string;
@@ -251,15 +252,9 @@ export default function UploadsPage() {
     finally { setDeletingReelIds(prev => { const n = new Set(prev); n.delete(reelId); return n; }); }
   }
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
-    const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
-    if (!url) { win?.close(); return; }
-    if (win) win.location.href = url;
-    else {
-      const a = document.createElement("a");
-      a.href = url; a.download = `highlight_${playerName}_${gameDate}.mp4`;
-      a.target = "_blank"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    }
+    if (!url) return;
+    await downloadVideo(url, `highlight_${playerName}_${gameDate}`);
   }
 
   const loadingStyle = { background: "#0a0a0a", minHeight: "100vh", padding: 24, color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif" };
