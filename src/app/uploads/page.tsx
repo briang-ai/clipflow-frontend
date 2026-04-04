@@ -29,6 +29,14 @@ type ReelRow = {
   created_at: string;
 };
 
+type UploadSummary = {
+  hit_count: number;
+  swing_count: number;
+  total_clips: number;
+};
+
+type CompileMode = "hits_only" | "all_swings";
+
 function groupIntoGames(uploads: UploadRow[]): UploadRow[][] {
   if (!uploads.length) return [];
   const sorted = [...uploads].sort(
@@ -47,6 +55,10 @@ function groupIntoGames(uploads: UploadRow[]): UploadRow[][] {
 function fmtGameLabel(group: UploadRow[]): string {
   const d = new Date(group[0].created_at);
   return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function fmtDuration(sec: number | null | undefined): string {
@@ -71,12 +83,26 @@ async function fetchReelsForUploads(uploadIds: string[]): Promise<Record<string,
   return results;
 }
 
+async function fetchSummariesForUploads(uploadIds: string[]): Promise<Record<string, UploadSummary>> {
+  const results: Record<string, UploadSummary> = {};
+  await Promise.all(
+    uploadIds.map(async id => {
+      try {
+        const res = await fetch(`${API_BASE}/api/uploads/${id}/summary`, { cache: "no-store" });
+        if (!res.ok) return;
+        results[id] = await res.json();
+      } catch { /* silent */ }
+    })
+  );
+  return results;
+}
+
 export default function UploadsPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const [uploads, setUploads] = useState<UploadRow[]>([]);
   const [error, setError] = useState<string>("");
-  const [downloadingId, setDownloadingId] = useState<string>("");
   const [reelsByUpload, setReelsByUpload] = useState<Record<string, ReelRow[]>>({});
+  const [summaries, setSummaries] = useState<Record<string, UploadSummary>>({});
   const [compilingGroup, setCompilingGroup] = useState<string>("");
   const [compileError, setCompileError] = useState<string>("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -84,10 +110,9 @@ export default function UploadsPage() {
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
   const [copiedReelId, setCopiedReelId] = useState<string>("");
   const [watermarkByGroup, setWatermarkByGroup] = useState<Record<string, boolean>>({});
+  const [modeByGroup, setModeByGroup] = useState<Record<string, CompileMode>>({});
   const [confirmModal, setConfirmModal] = useState<{
-    mode: "single" | "bulk";
-    uploadIds: string[];
-    label: string;
+    mode: "single" | "bulk"; uploadIds: string[]; label: string;
   } | null>(null);
 
   const myUploads = useMemo(() => {
@@ -98,28 +123,20 @@ export default function UploadsPage() {
 
   const gameGroups = useMemo(() => groupIntoGames(myUploads), [myUploads]);
 
-  // ── load uploads ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
-    async function load() {
-      try {
-        setError("");
-        const res = await fetch(`${API_BASE}/api/uploads/recent?limit=50`, { cache: "no-store" });
-        if (!res.ok) { setError(`Backend error ${res.status}: ${await res.text()}`); return; }
-        const data = await res.json();
-        setUploads(data.uploads ?? []);
-      } catch (e: any) { setError(`Network/JS error: ${String(e)}`); }
-    }
-    load();
+    fetch(`${API_BASE}/api/uploads/recent?limit=50`, { cache: "no-store" })
+      .then(r => r.json()).then(d => setUploads(d.uploads ?? []))
+      .catch(e => setError(`Network error: ${String(e)}`));
   }, [isLoaded, isSignedIn]);
 
-  // ── load reels for all uploads ────────────────────────────────────────────
   useEffect(() => {
     if (!myUploads.length) return;
-    fetchReelsForUploads(myUploads.map(u => u.id)).then(setReelsByUpload);
+    const ids = myUploads.map(u => u.id);
+    fetchReelsForUploads(ids).then(setReelsByUpload);
+    fetchSummariesForUploads(ids).then(setSummaries);
   }, [myUploads]);
 
-  // ── poll while any reel is pending/processing ─────────────────────────────
   useEffect(() => {
     const allReels = Object.values(reelsByUpload).flat();
     const stillWorking = allReels.some(r => r.status === "pending" || r.status === "processing");
@@ -133,70 +150,56 @@ export default function UploadsPage() {
 
   // ── compile ───────────────────────────────────────────────────────────────
   async function compileGroup(group: UploadRow[], groupKey: string) {
-    setCompileError("");
-    setCompilingGroup(groupKey);
+    setCompileError(""); setCompilingGroup(groupKey);
+    const mode = modeByGroup[groupKey] ?? "hits_only";
     try {
       const allHitClipIds: string[] = [];
-      await Promise.all(
-        group.map(async u => {
-          try {
-            const res = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
-            if (!res.ok) return;
-            const data = await res.json();
-            const hits = (data.clips ?? [])
-              .filter((c: any) => c.is_hit === true)
-              .map((c: any) => c.id);
-            allHitClipIds.push(...hits);
-          } catch { /* silent */ }
-        })
-      );
+      await Promise.all(group.map(async u => {
+        try {
+          const res = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
+          if (!res.ok) return;
+          const data = await res.json();
+          const hits = (data.clips ?? []).filter((c: any) => c.is_hit === true).map((c: any) => c.id);
+          allHitClipIds.push(...hits);
+        } catch { /* silent */ }
+      }));
+
       if (!allHitClipIds.length) {
-        setCompileError("No hit clips found across this game's uploads.");
-        setCompilingGroup("");
-        return;
+        setCompileError("No hit clips found. Try uploading more game footage.");
+        setCompilingGroup(""); return;
       }
+
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           upload_id: group[0].id,
           clip_ids: allHitClipIds,
           watermark: watermarkByGroup[groupKey] !== false,
+          mode,
         }),
       });
       if (!res.ok) { setCompileError(await res.text()); setCompilingGroup(""); return; }
       const fresh = await fetchReelsForUploads(group.map(u => u.id));
       setReelsByUpload(prev => ({ ...prev, ...fresh }));
-    } catch (e: any) {
-      setCompileError(String(e));
-      setCompilingGroup("");
-    }
+    } catch (e: any) { setCompileError(String(e)); setCompilingGroup(""); }
   }
 
   // ── delete helpers ────────────────────────────────────────────────────────
   function toggleSelect(id: string) {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
+    setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
-
   function toggleSelectAll(groupUploads: UploadRow[]) {
     const ids = groupUploads.map(u => u.id);
-    const allSelected = ids.every(id => selectedIds.has(id));
+    const allSel = ids.every(id => selectedIds.has(id));
     setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (allSelected) ids.forEach(id => next.delete(id));
-      else ids.forEach(id => next.add(id));
-      return next;
+      const n = new Set(prev);
+      if (allSel) ids.forEach(id => n.delete(id)); else ids.forEach(id => n.add(id));
+      return n;
     });
   }
-
   function requestDelete(uploadIds: string[], label: string, mode: "single" | "bulk") {
     setConfirmModal({ mode, uploadIds, label });
   }
-
   async function confirmDelete() {
     if (!confirmModal) return;
     const { uploadIds } = confirmModal;
@@ -207,103 +210,59 @@ export default function UploadsPage() {
         await fetch(`${API_BASE}/api/uploads/${uploadIds[0]}`, { method: "DELETE" });
       } else {
         await fetch(`${API_BASE}/api/uploads/bulk`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          method: "DELETE", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ upload_ids: uploadIds }),
         });
       }
       setUploads(prev => prev.filter(u => !uploadIds.includes(u.id)));
-      setSelectedIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
-      setReelsByUpload(prev => { const next = { ...prev }; uploadIds.forEach(id => delete next[id]); return next; });
-    } catch (e: any) {
-      setError(`Delete failed: ${String(e)}`);
-    } finally {
-      setDeletingIds(prev => { const next = new Set(prev); uploadIds.forEach(id => next.delete(id)); return next; });
-    }
+      setSelectedIds(prev => { const n = new Set(prev); uploadIds.forEach(id => n.delete(id)); return n; });
+      setReelsByUpload(prev => { const n = { ...prev }; uploadIds.forEach(id => delete n[id]); return n; });
+      setSummaries(prev => { const n = { ...prev }; uploadIds.forEach(id => delete n[id]); return n; });
+    } catch (e: any) { setError(`Delete failed: ${String(e)}`); }
+    finally { setDeletingIds(prev => { const n = new Set(prev); uploadIds.forEach(id => n.delete(id)); return n; }); }
   }
 
   // ── reel helpers ──────────────────────────────────────────────────────────
   async function getReelUrl(reelId: string): Promise<string | null> {
     const res = await fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" });
     if (!res.ok) { setCompileError(await res.text()); return null; }
-    const data = await res.json();
-    return data?.download_url ?? null;
+    return (await res.json())?.download_url ?? null;
   }
-
   async function openReel(reelId: string) {
     const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
     if (!url) { win?.close(); return; }
     if (win) win.location.href = url;
   }
-
   async function shareReel(reelId: string) {
     const shareUrl = `${window.location.origin}/share/${reelId}`;
     try {
-      if (navigator.share) {
-        await navigator.share({ title: "Check out my highlight reel!", url: shareUrl });
-      } else {
-        await navigator.clipboard.writeText(shareUrl);
-        setCopiedReelId(reelId);
-        setTimeout(() => setCopiedReelId(""), 2000);
-      }
-    } catch { /* user cancelled */ }
+      if (navigator.share) await navigator.share({ title: "Check out my highlight reel!", url: shareUrl });
+      else { await navigator.clipboard.writeText(shareUrl); setCopiedReelId(reelId); setTimeout(() => setCopiedReelId(""), 2000); }
+    } catch { /* cancelled */ }
   }
-
   async function deleteReel(reelId: string, uploadId: string) {
     setDeletingReelIds(prev => new Set([...prev, reelId]));
     try {
       const res = await fetch(`${API_BASE}/api/reels/${reelId}`, { method: "DELETE" });
       if (!res.ok) { setCompileError(await res.text()); return; }
-      setReelsByUpload(prev => ({
-        ...prev,
-        [uploadId]: (prev[uploadId] ?? []).filter(r => r.id !== reelId),
-      }));
-    } catch (e: any) {
-      setCompileError(`Delete failed: ${String(e)}`);
-    } finally {
-      setDeletingReelIds(prev => { const next = new Set(prev); next.delete(reelId); return next; });
-    }
+      setReelsByUpload(prev => ({ ...prev, [uploadId]: (prev[uploadId] ?? []).filter(r => r.id !== reelId) }));
+    } catch (e: any) { setCompileError(`Delete failed: ${String(e)}`); }
+    finally { setDeletingReelIds(prev => { const n = new Set(prev); n.delete(reelId); return n; }); }
   }
-
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
     const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
     if (!url) { win?.close(); return; }
-    if (win) { win.location.href = url; }
+    if (win) win.location.href = url;
     else {
       const a = document.createElement("a");
       a.href = url; a.download = `highlight_${playerName}_${gameDate}.mp4`;
-      a.target = "_blank"; a.rel = "noopener noreferrer";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      a.target = "_blank"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     }
   }
 
-  // ── upload download ───────────────────────────────────────────────────────
-  async function downloadUpload(uploadId: string, filename: string) {
-    try {
-      setError(""); setDownloadingId(uploadId);
-      const win = window.open("", "_blank");
-      const res = await fetch(`${API_BASE}/api/uploads/${uploadId}/download`, { cache: "no-store" });
-      if (!res.ok) { win?.close(); setError(await res.text()); return; }
-      const data = await res.json();
-      const url = data?.download_url;
-      if (!url) { win?.close(); setError("Missing download_url: " + JSON.stringify(data)); return; }
-      if (win) { win.location.href = url; }
-      else {
-        const a = document.createElement("a");
-        a.href = url; a.download = filename; a.target = "_blank"; a.rel = "noopener noreferrer";
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      }
-    } catch (e: any) { setError(`Download error: ${String(e)}`); }
-    finally { setDownloadingId(""); }
-  }
-
-  // ── render ────────────────────────────────────────────────────────────────
-  const loadingStyle = {
-    background: "#0a0a0a", minHeight: "100vh", padding: 24,
-    color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif",
-  };
+  const loadingStyle = { background: "#0a0a0a", minHeight: "100vh", padding: 24, color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif" };
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
@@ -316,73 +275,92 @@ export default function UploadsPage() {
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0a;color:#fff;font-family:'Outfit',-apple-system,system-ui,sans-serif}
 
-        .upload-card{padding:16px 20px;border-radius:14px;background:#141414;border:1px solid #222;transition:border-color 0.2s}
-        .upload-card:hover{border-color:rgba(232,98,44,0.3)}
-        .upload-card.selected{border-color:rgba(232,98,44,0.5);background:#1a1212}
+        /* Upload card — thumbnail style */
+        .upload-card{
+          border-radius:14px;background:#141414;border:1px solid #222;
+          overflow:hidden;transition:border-color 0.2s;cursor:default;
+        }
+        .upload-card:hover{border-color:rgba(232,98,44,0.25)}
+        .upload-card.selected{border-color:rgba(232,98,44,0.5);background:#161010}
 
-        .reel-card{padding:16px 20px;border-radius:14px;background:#0f0f0f;border:1px solid #1e1e1e;transition:border-color 0.2s;margin-top:8px}
+        .upload-thumb{
+          width:100%;aspect-ratio:16/9;background:#0a0a0a;
+          object-fit:cover;display:block;
+        }
+        .upload-info{padding:12px 14px}
+
+        .reel-card{padding:14px 16px;border-radius:14px;background:#0f0f0f;border:1px solid #1e1e1e;transition:border-color 0.2s}
         .reel-card.complete{border-color:rgba(232,98,44,0.2)}
 
-        .status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;font-family:monospace;background:#1a1a1a;border:1px solid #2a2a2a;color:#999}
-        .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;background:#1a1a1a;border:1px solid #2a2a2a;font-size:12px;color:#888}
+        .pill{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;background:#1a1a1a;border:1px solid #2a2a2a;font-size:11px;color:#888}
         .pill-value{color:#ccc;font-weight:500}
+        .pill.hit{background:rgba(232,98,44,0.08);border-color:rgba(232,98,44,0.2);color:#e8622c}
+        .pill.swing{background:rgba(240,168,48,0.08);border-color:rgba(240,168,48,0.2);color:#f0a830}
 
-        .btn-primary{padding:7px 14px;border-radius:10px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:600;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.2s}
+        .btn-primary{padding:6px 12px;border-radius:9px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:600;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.2s}
         .btn-primary:hover{opacity:0.9}
         .btn-primary:disabled{opacity:0.5;cursor:not-allowed}
 
-        .btn-secondary{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
+        .btn-secondary{padding:6px 12px;border-radius:9px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
         .btn-secondary:hover{border-color:rgba(232,98,44,0.4);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
 
-        .btn-share{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(232,98,44,0.3);color:#e8622c;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,background 0.2s}
-        .btn-share:hover{border-color:#e8622c;background:rgba(232,98,44,0.08)}
-        .btn-share.copied{border-color:#34d399;color:#34d399;background:rgba(52,211,153,0.08)}
+        .btn-share{padding:6px 12px;border-radius:9px;background:#1a1a1a;border:1px solid rgba(232,98,44,0.3);color:#e8622c;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
+        .btn-share:hover{border-color:#e8622c}
+        .btn-share.copied{border-color:#34d399;color:#34d399}
 
-        .btn-danger{padding:7px 14px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(239,68,68,0.3);color:#ef4444;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,background 0.2s}
-        .btn-danger:hover{border-color:#ef4444;background:rgba(239,68,68,0.08)}
+        .btn-danger{padding:6px 12px;border-radius:9px;background:#1a1a1a;border:1px solid rgba(239,68,68,0.3);color:#ef4444;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
+        .btn-danger:hover{border-color:#ef4444}
         .btn-danger:disabled{opacity:0.5;cursor:not-allowed}
 
-        .btn-compile{padding:9px 18px;border-radius:10px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:600;font-size:13px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.2s}
+        .btn-compile{padding:9px 16px;border-radius:10px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:600;font-size:13px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.2s}
         .btn-compile:hover{opacity:0.9}
         .btn-compile:disabled{opacity:0.5;cursor:not-allowed}
 
-        .game-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:16px 20px;border-radius:14px 14px 0 0;background:#111;border:1px solid #1e1e1e;border-bottom:none}
-        .game-body{padding:12px;border-radius:0 0 14px 14px;background:#0d0d0d;border:1px solid #1e1e1e;border-top:none;display:flex;flex-direction:column;gap:8px;margin-bottom:24px}
+        /* Mode toggle */
+        .mode-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid #2a2a2a;background:#111}
+        .mode-btn{padding:5px 10px;font-size:11px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;border:none;background:transparent;color:#555;transition:background 0.15s,color 0.15s;white-space:nowrap}
+        .mode-btn.active{background:rgba(232,98,44,0.15);color:#e8622c}
 
-        .cb{width:18px;height:18px;border-radius:5px;border:1px solid #333;background:#1a1a1a;appearance:none;-webkit-appearance:none;cursor:pointer;flex-shrink:0;position:relative;transition:border-color 0.15s,background 0.15s}
+        .game-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:14px 16px;border-radius:14px 14px 0 0;background:#111;border:1px solid #1e1e1e;border-bottom:none}
+        .game-body{padding:10px;border-radius:0 0 14px 14px;background:#0d0d0d;border:1px solid #1e1e1e;border-top:none;display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+
+        /* Upload grid inside game body */
+        .uploads-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        @media(max-width:480px){.uploads-grid{grid-template-columns:1fr}}
+
+        .cb{width:16px;height:16px;border-radius:4px;border:1px solid #333;background:#1a1a1a;appearance:none;-webkit-appearance:none;cursor:pointer;flex-shrink:0;position:relative;transition:border-color 0.15s,background 0.15s}
         .cb:checked{background:linear-gradient(135deg,#e8622c,#f0a830);border-color:#e8622c}
-        .cb:checked::after{content:'';position:absolute;left:5px;top:2px;width:5px;height:9px;border:2px solid #fff;border-left:none;border-top:none;transform:rotate(45deg)}
+        .cb:checked::after{content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;border:2px solid #fff;border-left:none;border-top:none;transform:rotate(45deg)}
 
-        .btn-trash{padding:6px 8px;border-radius:8px;background:transparent;border:1px solid transparent;color:#555;font-size:15px;cursor:pointer;transition:color 0.15s,border-color 0.15s,background 0.15s;line-height:1}
-        .btn-trash:hover{color:#ef4444;border-color:rgba(239,68,68,0.3);background:rgba(239,68,68,0.06)}
+        .btn-trash{padding:5px 7px;border-radius:7px;background:transparent;border:1px solid transparent;color:#555;font-size:13px;cursor:pointer;transition:color 0.15s,border-color 0.15s;line-height:1}
+        .btn-trash:hover{color:#ef4444;border-color:rgba(239,68,68,0.3)}
         .btn-trash:disabled{opacity:0.3;cursor:not-allowed}
 
-        .bulk-bar{position:sticky;top:68px;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 18px;border-radius:12px;background:#1a0e0e;border:1px solid rgba(239,68,68,0.3);margin-bottom:20px}
+        .bulk-bar{position:sticky;top:68px;z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 16px;border-radius:12px;background:#1a0e0e;border:1px solid rgba(239,68,68,0.3);margin-bottom:16px}
 
         .modal-overlay{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:24px}
         .modal{background:#141414;border:1px solid #2a2a2a;border-radius:20px;padding:28px 24px;max-width:400px;width:100%}
 
         @keyframes spin{to{transform:rotate(360deg)}}
-        .spinner{display:inline-block;width:13px;height:13px;border:2px solid #333;border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:5px}
+        .spinner{display:inline-block;width:12px;height:12px;border:2px solid #333;border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:4px}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        .pulse{animation:pulse 1.5s ease-in-out infinite}
       `}</style>
 
       <Nav />
       <RecordFAB />
 
-      {/* ── Confirm delete modal ─────────────────────────────────────────── */}
+      {/* Delete confirm modal */}
       {confirmModal && (
         <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 22, marginBottom: 12 }}>🗑️</div>
-            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>
-              Delete upload{confirmModal.uploadIds.length > 1 ? "s" : ""}?
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Delete upload{confirmModal.uploadIds.length > 1 ? "s" : ""}?</div>
             <div style={{ fontSize: 14, color: "#888", lineHeight: 1.6, marginBottom: 24 }}>
               {confirmModal.mode === "bulk"
-                ? `This will permanently delete ${confirmModal.uploadIds.length} uploads, all their clips, and any compiled reels. This cannot be undone.`
-                : <>This will permanently delete <strong style={{ color: "#ccc" }}>{confirmModal.label}</strong>, all its clips, and any compiled reels. This cannot be undone.</>
-              }
+                ? `Permanently delete ${confirmModal.uploadIds.length} uploads, all clips and reels. Cannot be undone.`
+                : <>Permanently delete <strong style={{ color: "#ccc" }}>{confirmModal.label}</strong> and all its clips and reels. Cannot be undone.</>}
             </div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button className="btn-secondary" onClick={() => setConfirmModal(null)}>Cancel</button>
@@ -394,89 +372,89 @@ export default function UploadsPage() {
         </div>
       )}
 
-      <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit', -apple-system, system-ui, sans-serif", padding: "32px 24px", maxWidth: 700, margin: "0 auto" }}>
+      <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit',-apple-system,system-ui,sans-serif", padding: "32px 20px", maxWidth: 720, margin: "0 auto" }}>
 
-        {/* Header row */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 32, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px" }}>
-            My{" "}
-            <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              uploads
-            </span>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px" }}>
+            My <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>uploads</span>
           </h1>
-          <a
-            href="mailto:info@clipflow.pro?subject=ClipFlow%20Beta%20Feedback"
-            style={{ padding: "9px 18px", borderRadius: 12, background: "#141414", border: "1px solid rgba(232,98,44,0.35)", color: "#f0a830", fontWeight: 600, fontSize: 13, fontFamily: "'Outfit', sans-serif", textDecoration: "none", whiteSpace: "nowrap" }}
+          <a href="mailto:info@clipflow.pro?subject=ClipFlow%20Beta%20Feedback"
+            style={{ padding: "8px 16px", borderRadius: 10, background: "#141414", border: "1px solid rgba(232,98,44,0.35)", color: "#f0a830", fontWeight: 600, fontSize: 13, fontFamily: "'Outfit',sans-serif", textDecoration: "none" }}
             onMouseOver={e => (e.currentTarget.style.borderColor = "#e8622c")}
-            onMouseOut={e => (e.currentTarget.style.borderColor = "rgba(232,98,44,0.35)")}
-          >
+            onMouseOut={e => (e.currentTarget.style.borderColor = "rgba(232,98,44,0.35)")}>
             💬 Feedback
           </a>
         </div>
 
-        {/* Errors */}
-        {error && (
-          <div style={{ marginBottom: 24, padding: "14px 18px", borderRadius: 14, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13, whiteSpace: "pre-wrap" }}>
-            {error}
-          </div>
-        )}
-        {compileError && (
-          <div style={{ marginBottom: 24, padding: "14px 18px", borderRadius: 14, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>
-            {compileError}
-          </div>
-        )}
+        {error && <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>{error}</div>}
+        {compileError && <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>{compileError}</div>}
 
-        {/* Bulk delete bar */}
         {anySelected && (
           <div className="bulk-bar">
-            <span style={{ fontSize: 14, color: "#ccc" }}>
-              <strong style={{ color: "#fff" }}>{selectedIds.size}</strong> upload{selectedIds.size !== 1 ? "s" : ""} selected
-            </span>
+            <span style={{ fontSize: 13, color: "#ccc" }}><strong style={{ color: "#fff" }}>{selectedIds.size}</strong> selected</span>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn-secondary" onClick={() => setSelectedIds(new Set())}>Clear</button>
-              <button className="btn-danger" onClick={() => requestDelete([...selectedIds], "", "bulk")}>🗑️ Delete selected</button>
+              <button className="btn-danger" onClick={() => requestDelete([...selectedIds], "", "bulk")}>🗑️ Delete</button>
             </div>
           </div>
         )}
 
-        {/* Empty state */}
         {gameGroups.length === 0 ? (
-          <div style={{ padding: "32px 24px", borderRadius: 16, background: "#141414", border: "1px solid #222", color: "#666", fontSize: 15, textAlign: "center" }}>
-            No uploads yet. Record or upload your first game video to get started.
+          <div style={{ padding: "40px 24px", borderRadius: 16, background: "#141414", border: "1px solid #222", color: "#555", fontSize: 15, textAlign: "center" }}>
+            No uploads yet — tap 🎥 to record your first game.
           </div>
         ) : (
           gameGroups.map((group, gi) => {
             const groupKey = group[0].id;
             const groupReels = group.flatMap(u => reelsByUpload[u.id] ?? []);
-            const isCompiling = compilingGroup === groupKey ||
-              groupReels.some(r => r.status === "pending" || r.status === "processing");
+            const isCompiling = compilingGroup === groupKey || groupReels.some(r => r.status === "pending" || r.status === "processing");
             const allGroupSelected = group.every(u => selectedIds.has(u.id));
+            const mode = modeByGroup[groupKey] ?? "hits_only";
+
+            // Aggregate hit/swing counts across all uploads in group
+            const groupHits = group.reduce((sum, u) => sum + (summaries[u.id]?.hit_count ?? 0), 0);
+            const groupSwings = group.reduce((sum, u) => sum + (summaries[u.id]?.swing_count ?? 0), 0);
 
             return (
               <div key={groupKey}>
+                {/* Game header */}
                 <div className="game-header">
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <input type="checkbox" className="cb" checked={allGroupSelected} onChange={() => toggleSelectAll(group)} title="Select all in this game" />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <input type="checkbox" className="cb" checked={allGroupSelected} onChange={() => toggleSelectAll(group)} title="Select all" />
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#555", marginBottom: 4 }}>
+                      <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#444", marginBottom: 2 }}>
                         Game {gameGroups.length - gi}
                       </div>
-                      <div style={{ fontSize: 16, fontWeight: 700 }}>{fmtGameLabel(group)}</div>
-                      <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>{group.length} upload{group.length !== 1 ? "s" : ""}</div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>{fmtGameLabel(group)}</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
+                        {groupHits > 0 && <span className="pill hit">⚾ {groupHits} hit{groupHits !== 1 ? "s" : ""}</span>}
+                        {groupSwings > groupHits && <span className="pill swing">🏏 {groupSwings - groupHits} miss{groupSwings - groupHits !== 1 ? "es" : ""}</span>}
+                        <span className="pill">{group.length} clip{group.length !== 1 ? "s" : ""}</span>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+
+                  {/* Compile controls */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                     <button className="btn-compile" onClick={() => compileGroup(group, groupKey)} disabled={isCompiling}>
                       {isCompiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
                     </button>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "#555", userSelect: "none" }}>
-                      <input
-                        type="checkbox"
-                        checked={watermarkByGroup[groupKey] !== false}
-                        onChange={e => setWatermarkByGroup(prev => ({ ...prev, [groupKey]: e.target.checked }))}
-                        style={{ accentColor: "#e8622c", width: 12, height: 12 }}
-                      />
-                      clipflow.pro watermark
+                    {/* Mode toggle */}
+                    <div className="mode-toggle">
+                      <button className={`mode-btn${mode === "hits_only" ? " active" : ""}`} onClick={() => setModeByGroup(p => ({ ...p, [groupKey]: "hits_only" }))}>
+                        Hits only
+                      </button>
+                      <button className={`mode-btn${mode === "all_swings" ? " active" : ""}`} onClick={() => setModeByGroup(p => ({ ...p, [groupKey]: "all_swings" }))}>
+                        All swings
+                      </button>
+                    </div>
+                    {/* Watermark toggle */}
+                    <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 11, color: "#444", userSelect: "none" }}>
+                      <input type="checkbox" checked={watermarkByGroup[groupKey] !== false}
+                        onChange={e => setWatermarkByGroup(p => ({ ...p, [groupKey]: e.target.checked }))}
+                        style={{ accentColor: "#e8622c", width: 11, height: 11 }} />
+                      watermark
                     </label>
                   </div>
                 </div>
@@ -484,48 +462,39 @@ export default function UploadsPage() {
                 <div className="game-body">
                   {/* Reel cards */}
                   {groupReels.map(reel => (
-                    <div key={reel.id} className={`reel-card ${reel.status === "complete" ? "complete" : ""}`}>
+                    <div key={reel.id} className={`reel-card${reel.status === "complete" ? " complete" : ""}`}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>
-                            🎬 {reel.player_name || "Unknown Player"}
+                          <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>
+                            🎬 {reel.player_name || "Highlight Reel"}
                             {reel.jersey_number && (
-                              <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 500, padding: "2px 8px", borderRadius: 20, background: "rgba(232,98,44,0.12)", border: "1px solid rgba(232,98,44,0.25)", color: "#e8622c" }}>
+                              <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 7px", borderRadius: 20, background: "rgba(232,98,44,0.12)", border: "1px solid rgba(232,98,44,0.25)", color: "#e8622c" }}>
                                 #{reel.jersey_number}
                               </span>
                             )}
                           </div>
-                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
-                            <span className="pill">📅 <span className="pill-value">{new Date(reel.game_date).toLocaleDateString()}</span></span>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
                             <span className="pill">🎞 <span className="pill-value">{reel.clip_count} clip{reel.clip_count !== 1 ? "s" : ""}</span></span>
-                            <span className="pill">⏱ <span className="pill-value">{fmtDuration(reel.duration_sec)}</span></span>
+                            {reel.duration_sec && <span className="pill">⏱ <span className="pill-value">{fmtDuration(reel.duration_sec)}</span></span>}
                           </div>
                           {reel.status !== "complete" && (
-                            <div style={{ fontSize: 12 }}>
-                              {reel.status === "pending" || reel.status === "processing" ? (
-                                <span style={{ color: "#f0a830" }}><span className="spinner" />{reel.status === "pending" ? "Queued…" : "Compiling…"}</span>
-                              ) : (
-                                <span style={{ color: "#fca5a5" }}>⚠ Error{reel.error_message ? `: ${reel.error_message}` : ""}</span>
-                              )}
+                            <div style={{ fontSize: 12, marginTop: 4 }}>
+                              {reel.status === "pending" || reel.status === "processing"
+                                ? <span style={{ color: "#f0a830" }} className="pulse"><span className="spinner" />{reel.status === "pending" ? "Queued…" : "Compiling…"}</span>
+                                : <span style={{ color: "#fca5a5" }}>⚠ Error</span>}
                             </div>
                           )}
                         </div>
                         {reel.status === "complete" && (
-                          <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
                             <button className="btn-primary" onClick={() => openReel(reel.id)}>▶ Play</button>
-                            <button className="btn-secondary" onClick={() => downloadReel(reel.id, reel.player_name, reel.game_date)}>⬇ Download</button>
-                            <button
-                              className={`btn-share${copiedReelId === reel.id ? " copied" : ""}`}
-                              onClick={() => shareReel(reel.id)}
-                            >
-                              {copiedReelId === reel.id ? "✓ Copied!" : "🔗 Share"}
+                            <button className="btn-secondary" onClick={() => downloadReel(reel.id, reel.player_name, reel.game_date)}>⬇</button>
+                            <button className={`btn-share${copiedReelId === reel.id ? " copied" : ""}`} onClick={() => shareReel(reel.id)}>
+                              {copiedReelId === reel.id ? "✓" : "🔗"}
                             </button>
-                            <button
-                              className="btn-trash"
+                            <button className="btn-trash"
                               onClick={() => deleteReel(reel.id, group.flatMap(u => (reelsByUpload[u.id] ?? []).find(r => r.id === reel.id) ? [u.id] : [])[0])}
-                              disabled={deletingReelIds.has(reel.id)}
-                              title="Delete this reel"
-                            >
+                              disabled={deletingReelIds.has(reel.id)}>
                               {deletingReelIds.has(reel.id) ? <span className="spinner" /> : "🗑️"}
                             </button>
                           </div>
@@ -534,41 +503,67 @@ export default function UploadsPage() {
                     </div>
                   ))}
 
-                  {/* Upload rows */}
-                  {group.map(u => (
-                    <div key={u.id} className={`upload-card ${selectedIds.has(u.id) ? "selected" : ""}`}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
-                          <input type="checkbox" className="cb" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, fontSize: 15, color: "#fff", marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {u.original_filename}
-                            </div>
-                            <div style={{ fontSize: 12, color: "#555" }}>
-                              {new Date(u.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                  {/* Upload grid with video thumbnails */}
+                  <div className="uploads-grid">
+                    {group.map(u => {
+                      const sum = summaries[u.id];
+                      return (
+                        <div key={u.id} className={`upload-card${selectedIds.has(u.id) ? " selected" : ""}`}>
+                          {/* Video thumbnail — shows first frame */}
+                          <div style={{ position: "relative" }}>
+                            <video
+                              className="upload-thumb"
+                              src={undefined}
+                              preload="none"
+                              playsInline
+                              muted
+                              style={{ width: "100%", aspectRatio: "16/9", background: "#0d0d0d", display: "block", objectFit: "cover" }}
+                              onMouseOver={e => { const v = e.currentTarget; v.play().catch(() => {}); }}
+                              onMouseOut={e => { const v = e.currentTarget; v.pause(); v.currentTime = 0; }}
+                            />
+                            {/* Status overlay */}
+                            {u.status !== "complete" && (
+                              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", fontSize: 12, color: "#f0a830" }}>
+                                {u.status === "processing" ? <><span className="spinner" />Processing…</> : u.status === "error" ? "⚠ Error" : "⏳ Queued"}
+                              </div>
+                            )}
+                            {/* Selection checkbox */}
+                            <div style={{ position: "absolute", top: 8, left: 8 }}>
+                              <input type="checkbox" className="cb" checked={selectedIds.has(u.id)} onChange={() => toggleSelect(u.id)} />
                             </div>
                           </div>
+
+                          {/* Info row */}
+                          <div className="upload-info">
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                              <div style={{ fontSize: 12, color: "#666" }}>{fmtTime(u.created_at)}</div>
+                              <button className="btn-trash" onClick={() => requestDelete([u.id], u.original_filename, "single")} disabled={deletingIds.has(u.id)}>
+                                {deletingIds.has(u.id) ? <span className="spinner" /> : "🗑️"}
+                              </button>
+                            </div>
+                            {/* Hit / swing summary pills */}
+                            {sum && (
+                              <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                                {sum.hit_count > 0 && <span className="pill hit">⚾ {sum.hit_count} hit{sum.hit_count !== 1 ? "s" : ""}</span>}
+                                {sum.swing_count > sum.hit_count && <span className="pill swing">🏏 {sum.swing_count - sum.hit_count} miss{sum.swing_count - sum.hit_count !== 1 ? "es" : ""}</span>}
+                                {sum.total_clips === 0 && <span className="pill">Processing…</span>}
+                              </div>
+                            )}
+                            <Link href={`/uploads/${u.id}`} className="btn-primary" style={{ display: "block", textAlign: "center", textDecoration: "none", width: "100%", padding: "6px 0" }}>
+                              View clips
+                            </Link>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                          <span className="status-pill">{u.status}</span>
-                          <Link href={`/uploads/${u.id}`} className="btn-primary">▶ View Clips</Link>
-                          <button className="btn-secondary" onClick={() => downloadUpload(u.id, u.original_filename)} disabled={downloadingId === u.id}>
-                            {downloadingId === u.id ? "…" : "⬇"}
-                          </button>
-                          <button className="btn-trash" onClick={() => requestDelete([u.id], u.original_filename, "single")} disabled={deletingIds.has(u.id)} title="Delete this upload">
-                            {deletingIds.has(u.id) ? <span className="spinner" /> : "🗑️"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             );
           })
         )}
 
-        <p style={{ marginTop: 48, fontSize: 14, fontWeight: 500, letterSpacing: "2px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+        <p style={{ marginTop: 48, fontSize: 13, fontWeight: 500, letterSpacing: "2px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
           Find Your Flow
         </p>
       </div>
