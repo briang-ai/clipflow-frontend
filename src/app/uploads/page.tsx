@@ -5,7 +5,6 @@ import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import Nav from "@/components/Nav";
 import RecordFAB from "@/components/RecordFAB";
-import { downloadVideo } from "@/lib/downloadVideo";
 
 type UploadRow = {
   id: string;
@@ -110,7 +109,7 @@ export default function UploadsPage() {
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
   const [copiedReelId, setCopiedReelId] = useState<string>("");
-  const [watermarkByGroup, setWatermarkByGroup] = useState<Record<string, boolean>>({});
+  
   const [modeByGroup, setModeByGroup] = useState<Record<string, CompileMode>>({});
   const [confirmModal, setConfirmModal] = useState<{
     mode: "single" | "bulk"; uploadIds: string[]; label: string;
@@ -175,7 +174,7 @@ export default function UploadsPage() {
         body: JSON.stringify({
           upload_id: group[0].id,
           clip_ids: allHitClipIds,
-          watermark: watermarkByGroup[groupKey] !== false,
+          watermark: true,
           mode,
         }),
       });
@@ -252,9 +251,15 @@ export default function UploadsPage() {
     finally { setDeletingReelIds(prev => { const n = new Set(prev); n.delete(reelId); return n; }); }
   }
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
+    const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
-    if (!url) return;
-    await downloadVideo(url, `highlight_${playerName}_${gameDate}`);
+    if (!url) { win?.close(); return; }
+    if (win) win.location.href = url;
+    else {
+      const a = document.createElement("a");
+      a.href = url; a.download = `highlight_${playerName}_${gameDate}.mp4`;
+      a.target = "_blank"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
   }
 
   const loadingStyle = { background: "#0a0a0a", minHeight: "100vh", padding: 24, color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif" };
@@ -444,13 +449,7 @@ export default function UploadsPage() {
                         All swings
                       </button>
                     </div>
-                    {/* Watermark toggle */}
-                    <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 11, color: "#444", userSelect: "none" }}>
-                      <input type="checkbox" checked={watermarkByGroup[groupKey] !== false}
-                        onChange={e => setWatermarkByGroup(p => ({ ...p, [groupKey]: e.target.checked }))}
-                        style={{ accentColor: "#e8622c", width: 11, height: 11 }} />
-                      watermark
-                    </label>
+
                   </div>
                 </div>
 
