@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
@@ -8,6 +8,7 @@ import Nav from "@/components/Nav";
 
 type UploadRow = {
   id: string;
+  user_id: string;
   original_filename: string;
   status: string;
   created_at: string;
@@ -29,7 +30,32 @@ type ClipRow = {
   created_at: string;
 };
 
-type CompileMode = "hits_only" | "all_swings";
+type GameGroup = {
+  key: string;           // first upload id — stable identity
+  uploads: UploadRow[];
+  clips: ClipRow[];
+  collapsed: boolean;
+};
+
+function groupIntoGames(uploads: UploadRow[]): UploadRow[][] {
+  if (!uploads.length) return [];
+  const sorted = [...uploads].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const groups: UploadRow[][] = [[sorted[0]]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1].created_at).getTime();
+    const curr = new Date(sorted[i].created_at).getTime();
+    if (curr - prev <= 3 * 60 * 60 * 1000) groups[groups.length - 1].push(sorted[i]);
+    else groups.push([sorted[i]]);
+  }
+  return groups.reverse(); // most recent first
+}
+
+function fmtGameLabel(group: UploadRow[]): string {
+  const d = new Date(group[0].created_at);
+  return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
@@ -70,12 +96,8 @@ function ClipCard({
   }
 
   useEffect(() => {
-    if (hovered && clipUrl && videoRef.current) {
-      videoRef.current.play().catch(() => {});
-    }
+    if (hovered && clipUrl && videoRef.current) videoRef.current.play().catch(() => {});
   }, [hovered, clipUrl]);
-
-  const isHit = clip.is_hit === true;
 
   return (
     <div
@@ -84,55 +106,42 @@ function ClipCard({
       onMouseLeave={handleMouseLeave}
       style={{
         borderRadius: 12, overflow: "hidden", cursor: "pointer",
-        border: selected
-          ? "2px solid #e8622c"
-          : "2px solid #222",
+        border: `2px solid ${selected ? "#e8622c" : "#222"}`,
         background: selected ? "#1a0e08" : "#141414",
         transition: "border-color 0.15s, background 0.15s",
-        position: "relative",
       }}
     >
       {/* Media */}
       <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#0d0d0d", overflow: "hidden" }}>
         {thumbnailUrl && (
           <img src={thumbnailUrl} alt="" style={{
-            position: "absolute", inset: 0, width: "100%", height: "100%",
-            objectFit: "cover",
-            opacity: hovered && clipUrl ? 0 : 1,
-            transition: "opacity 0.25s",
+            position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover",
+            opacity: hovered && clipUrl ? 0 : 1, transition: "opacity 0.25s",
           }} />
         )}
         {!thumbnailUrl && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 24 }}>🎥</div>
         )}
-        <video
-          ref={videoRef}
-          src={clipUrl ?? undefined}
-          muted playsInline loop
-          style={{
-            position: "absolute", inset: 0, width: "100%", height: "100%",
-            objectFit: "cover",
-            opacity: hovered && clipUrl ? 1 : 0,
-            transition: "opacity 0.25s",
-          }}
-        />
+        <video ref={videoRef} src={clipUrl ?? undefined} muted playsInline loop style={{
+          position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover",
+          opacity: hovered && clipUrl ? 1 : 0, transition: "opacity 0.25s",
+        }} />
         {hovered && loadingClip && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.4)" }}>
             <span className="spinner" />
           </div>
         )}
-        {/* Hit / swing badge */}
+        {/* Badge */}
         <div style={{ position: "absolute", top: 6, right: 6 }}>
-          {isHit
+          {clip.is_hit
             ? <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(232,98,44,0.85)", color: "#fff", fontWeight: 700 }}>⚾ HIT</span>
             : clip.is_swing
             ? <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(240,168,48,0.8)", color: "#fff", fontWeight: 700 }}>🏏 SWING</span>
             : null}
         </div>
-        {/* Checkmark overlay */}
+        {/* Checkmark */}
         <div style={{
-          position: "absolute", top: 6, left: 6,
-          width: 20, height: 20, borderRadius: 5,
+          position: "absolute", top: 6, left: 6, width: 20, height: 20, borderRadius: 5,
           background: selected ? "linear-gradient(135deg,#e8622c,#f0a830)" : "rgba(0,0,0,0.5)",
           border: selected ? "none" : "1.5px solid #555",
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -141,10 +150,9 @@ function ClipCard({
           {selected && <span style={{ color: "#fff", fontSize: 11, lineHeight: 1 }}>✓</span>}
         </div>
       </div>
-
       {/* Info */}
       <div style={{ padding: "8px 10px" }}>
-        <div style={{ fontSize: 11, color: "#666" }}>{clip.label || `Clip`}</div>
+        <div style={{ fontSize: 11, color: "#666" }}>{clip.label || "Clip"}</div>
         {clip.ai_reason && (
           <div style={{ fontSize: 10, color: "#444", marginTop: 2, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
             {clip.ai_reason}
@@ -162,53 +170,34 @@ function ClipCard({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function ReelsNewPage() {
-  const { isLoaded, isSignedIn } = useUser();
-  const router       = useRouter();
-  const searchParams = useSearchParams();
-  const gameParam    = searchParams.get("game"); // first upload ID of the group
+  const { isLoaded, isSignedIn, user } = useUser();
+  const router = useRouter();
 
-  const [uploads, setUploads]               = useState<UploadRow[]>([]);
-  const [clipsByUpload, setClipsByUpload]   = useState<Record<string, ClipRow[]>>({});
-  const [thumbsByClip, setThumbsByClip]     = useState<Record<string, string>>({});
-  const [enabledUploads, setEnabledUploads] = useState<Set<string>>(new Set());
-  const [selectedClips, setSelectedClips]   = useState<Set<string>>(new Set());
-  const [mode, setMode]                     = useState<CompileMode>("hits_only");
-  const [loading, setLoading]               = useState(true);
-  const [compiling, setCompiling]           = useState(false);
-  const [error, setError]                   = useState("");
+  const [groups, setGroups]           = useState<GameGroup[]>([]);
+  const [thumbsByClip, setThumbsByClip] = useState<Record<string, string>>({});
+  const [selectedClips, setSelectedClips] = useState<Set<string>>(new Set());
+  const [loading, setLoading]         = useState(true);
+  const [compiling, setCompiling]     = useState(false);
+  const [error, setError]             = useState("");
 
-  // ── Load uploads in this game group ──────────────────────────────────────
+  // ── Load all uploads + clips ──────────────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !gameParam) return;
+    if (!isLoaded || !isSignedIn || !user?.id) return;
+    const uid = user.id;
 
     async function load() {
       setLoading(true);
       try {
-        // Fetch all recent uploads and find the ones in this game group
-        const res = await fetch(`${API_BASE}/api/uploads/recent?limit=50`, { cache: "no-store" });
+        const res = await fetch(`${API_BASE}/api/uploads/recent?limit=100`, { cache: "no-store" });
         if (!res.ok) { setError("Failed to load uploads"); return; }
         const data = await res.json();
-        const all: UploadRow[] = data.uploads ?? [];
+        const myUploads: UploadRow[] = (data.uploads ?? []).filter((u: UploadRow) => u.user_id === uid);
 
-        // Recreate the same 3-hour grouping logic
-        const sorted = [...all].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-        const groups: UploadRow[][] = sorted.length ? [[sorted[0]]] : [];
-        for (let i = 1; i < sorted.length; i++) {
-          const prev = new Date(sorted[i - 1].created_at).getTime();
-          const curr = new Date(sorted[i].created_at).getTime();
-          if (curr - prev <= 3 * 60 * 60 * 1000) groups[groups.length - 1].push(sorted[i]);
-          else groups.push([sorted[i]]);
-        }
+        const rawGroups = groupIntoGames(myUploads);
 
-        const group = groups.find(g => g[0].id === gameParam) ?? [];
-        if (!group.length) { setError("Game group not found"); return; }
-
-        setUploads(group);
-        setEnabledUploads(new Set(group.map(u => u.id)));
-
-        // Fetch clips for every upload in the group
+        // Fetch clips for all uploads in parallel
         const clipsMap: Record<string, ClipRow[]> = {};
-        await Promise.all(group.map(async u => {
+        await Promise.all(myUploads.map(async u => {
           try {
             const r = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
             if (!r.ok) return;
@@ -216,80 +205,91 @@ export default function ReelsNewPage() {
             clipsMap[u.id] = d.clips ?? [];
           } catch { /* silent */ }
         }));
-        setClipsByUpload(clipsMap);
+
+        // Build game groups with clips merged and sorted by start_sec
+        const builtGroups: GameGroup[] = rawGroups.map(uploads => {
+          const clips = uploads
+            .flatMap(u => clipsMap[u.id] ?? [])
+            .sort((a, b) => (a.start_sec ?? 0) - (b.start_sec ?? 0));
+          return { key: uploads[0].id, uploads, clips, collapsed: false };
+        });
+        setGroups(builtGroups);
 
         // Pre-select all hit clips
         const hitIds = new Set<string>();
-        for (const clips of Object.values(clipsMap)) {
-          for (const c of clips) {
+        for (const g of builtGroups)
+          for (const c of g.clips)
             if (c.is_hit === true) hitIds.add(c.id);
-          }
-        }
         setSelectedClips(hitIds);
 
-        // Fetch thumbnails (presigned URLs stored on clip rows)
+        // Fetch thumbnails for all clips
+        const allClips = builtGroups.flatMap(g => g.clips);
         const thumbMap: Record<string, string> = {};
-        await Promise.all(
-          Object.values(clipsMap).flat().map(async clip => {
-            if (!clip.thumbnail_s3_key) return;
-            try {
-              const r = await fetch(`${API_BASE}/api/clips/${clip.id}/thumbnail`, { cache: "no-store" });
-              if (!r.ok) return;
-              const d = await r.json();
-              if (d.thumbnail_url) thumbMap[clip.id] = d.thumbnail_url;
-            } catch { /* silent */ }
-          })
-        );
+        await Promise.all(allClips.map(async clip => {
+          if (!clip.thumbnail_s3_key) return;
+          try {
+            const r = await fetch(`${API_BASE}/api/clips/${clip.id}/thumbnail`, { cache: "no-store" });
+            if (!r.ok) return;
+            const d = await r.json();
+            if (d.thumbnail_url) thumbMap[clip.id] = d.thumbnail_url;
+          } catch { /* silent */ }
+        }));
         setThumbsByClip(thumbMap);
       } catch (e: any) { setError(String(e)); }
       finally { setLoading(false); }
     }
 
     load();
-  }, [isLoaded, isSignedIn, gameParam]);
+  }, [isLoaded, isSignedIn, user?.id]);
 
-  // ── Derived clip list (only from enabled uploads) ─────────────────────────
-  const visibleClips = uploads
-    .filter(u => enabledUploads.has(u.id))
-    .flatMap(u => clipsByUpload[u.id] ?? []);
-
-  const hitClips   = visibleClips.filter(c => c.is_hit === true);
-  const swingClips = visibleClips.filter(c => c.is_swing === true && c.is_hit !== true);
-  const otherClips = visibleClips.filter(c => c.is_swing !== true && c.is_hit !== true);
-
-  // ── Select / deselect all helpers ─────────────────────────────────────────
-  function selectAllVisible() {
-    setSelectedClips(prev => new Set([...prev, ...visibleClips.map(c => c.id)]));
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function toggleCollapse(key: string) {
+    setGroups(prev => prev.map(g => g.key === key ? { ...g, collapsed: !g.collapsed } : g));
   }
-  function deselectAllVisible() {
-    const visibleIds = new Set(visibleClips.map(c => c.id));
-    setSelectedClips(prev => new Set([...prev].filter(id => !visibleIds.has(id))));
-  }
-  const allSelected  = visibleClips.length > 0 && visibleClips.every(c => selectedClips.has(c.id));
-  const noneSelected = visibleClips.every(c => !selectedClips.has(c.id));
 
   function toggleClip(id: string) {
     setSelectedClips(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
-  function toggleUpload(id: string) {
-    setEnabledUploads(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  function selectAllInGroup(g: GameGroup) {
+    setSelectedClips(prev => new Set([...prev, ...g.clips.map(c => c.id)]));
   }
+  function deselectAllInGroup(g: GameGroup) {
+    const ids = new Set(g.clips.map(c => c.id));
+    setSelectedClips(prev => new Set([...prev].filter(id => !ids.has(id))));
+  }
+  function allSelectedInGroup(g: GameGroup) {
+    return g.clips.length > 0 && g.clips.every(c => selectedClips.has(c.id));
+  }
+  function noneSelectedInGroup(g: GameGroup) {
+    return g.clips.every(c => !selectedClips.has(c.id));
+  }
+
+  const totalSelected = groups.reduce(
+    (sum, g) => sum + g.clips.filter(c => selectedClips.has(c.id)).length, 0
+  );
 
   // ── Compile ───────────────────────────────────────────────────────────────
   async function handleCompile() {
     setError(""); setCompiling(true);
     try {
-      const clipIds = [...selectedClips].filter(id => visibleClips.some(c => c.id === id));
+      const clipIds = [...selectedClips];
       if (!clipIds.length) { setError("Select at least one clip to compile."); return; }
+
+      // Use the upload_id of the first selected clip's upload as the anchor
+      const allClips = groups.flatMap(g => g.clips);
+      const firstSelected = allClips.find(c => selectedClips.has(c.id));
+      const anchorUploadId = firstSelected?.upload_id;
+      if (!anchorUploadId) { setError("Could not determine upload context."); return; }
 
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          upload_id: gameParam,
+          upload_id: anchorUploadId,
           clip_ids: clipIds,
           watermark: true,
-          mode,
+          mode: "hits_only",
         }),
       });
       if (!res.ok) { setError(await res.text()); return; }
@@ -302,8 +302,6 @@ export default function ReelsNewPage() {
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
-  const selectedVisible = visibleClips.filter(c => selectedClips.has(c.id)).length;
-
   return (
     <>
       <style>{`
@@ -311,41 +309,42 @@ export default function ReelsNewPage() {
         *{margin:0;padding:0;box-sizing:border-box}
         body{background:#0a0a0a;color:#fff;font-family:'Outfit',-apple-system,system-ui,sans-serif}
 
-        .section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#555;margin-bottom:10px}
+        .game-block{border-radius:14px;border:1px solid #1e1e1e;overflow:hidden;margin-bottom:16px}
 
-        .upload-toggle{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;border:2px solid #222;background:#141414;cursor:pointer;transition:border-color 0.15s,background 0.15s;user-select:none}
-        .upload-toggle.on{border-color:rgba(232,98,44,0.4);background:#1a0e08}
-        .upload-toggle:hover{border-color:rgba(232,98,44,0.25)}
+        .game-header-row{
+          display:flex;align-items:center;justify-content:space-between;
+          gap:10px;padding:12px 16px;background:#111;cursor:pointer;
+          user-select:none;transition:background 0.15s;flex-wrap:wrap;
+        }
+        .game-header-row:hover{background:#161616}
 
-        .clips-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+        .clips-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:12px}
         @media(max-width:600px){.clips-grid{grid-template-columns:repeat(2,1fr)}}
 
-        .mode-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid #2a2a2a;background:#111}
-        .mode-btn{padding:6px 12px;font-size:12px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;border:none;background:transparent;color:#555;transition:background 0.15s,color 0.15s;white-space:nowrap}
-        .mode-btn.active{background:rgba(232,98,44,0.15);color:#e8622c}
+        .btn-secondary{padding:6px 12px;border-radius:9px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s}
+        .btn-secondary:hover{border-color:rgba(232,98,44,0.4);color:#fff}
+        .btn-secondary:disabled{opacity:0.4;cursor:not-allowed}
 
         .btn-primary{padding:10px 20px;border-radius:10px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:700;font-size:14px;font-family:'Outfit',sans-serif;cursor:pointer;transition:opacity 0.2s;white-space:nowrap}
         .btn-primary:hover{opacity:0.9}
         .btn-primary:disabled{opacity:0.4;cursor:not-allowed}
 
-        .btn-secondary{padding:7px 14px;border-radius:9px;background:#1a1a1a;border:1px solid #2a2a2a;color:#ccc;font-weight:500;font-size:12px;font-family:'Outfit',sans-serif;cursor:pointer;transition:border-color 0.2s;white-space:nowrap}
-        .btn-secondary:hover{border-color:rgba(232,98,44,0.4);color:#fff}
+        .pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;background:#1a1a1a;border:1px solid #2a2a2a;font-size:11px;color:#666}
+        .pill.hit{background:rgba(232,98,44,0.08);border-color:rgba(232,98,44,0.2);color:#e8622c}
+        .pill.swing{background:rgba(240,168,48,0.08);border-color:rgba(240,168,48,0.2);color:#f0a830}
 
-        .sticky-footer{position:sticky;bottom:0;z-index:20;background:rgba(10,10,10,0.92);backdrop-filter:blur(12px);border-top:1px solid #1e1e1e;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-
-        .cb{width:16px;height:16px;border-radius:4px;border:1px solid #333;background:#1a1a1a;appearance:none;-webkit-appearance:none;cursor:pointer;flex-shrink:0;position:relative;transition:border-color 0.15s,background 0.15s}
-        .cb:checked{background:linear-gradient(135deg,#e8622c,#f0a830);border-color:#e8622c}
-        .cb:checked::after{content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;border:2px solid #fff;border-left:none;border-top:none;transform:rotate(45deg)}
+        .sticky-footer{position:sticky;bottom:0;z-index:20;background:rgba(10,10,10,0.93);backdrop-filter:blur(12px);border-top:1px solid #1e1e1e;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 
         @keyframes spin{to{transform:rotate(360deg)}}
         .spinner{display:inline-block;width:12px;height:12px;border:2px solid #333;border-top-color:#e8622c;border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:4px}
 
-        .divider{height:1px;background:#1a1a1a;margin:28px 0}
+        .chevron{display:inline-block;transition:transform 0.2s;font-style:normal}
+        .chevron.open{transform:rotate(90deg)}
       `}</style>
 
       <Nav />
 
-      <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit',-apple-system,system-ui,sans-serif", padding: "32px 20px 120px", maxWidth: 760, margin: "0 auto" }}>
+      <div style={{ background: "#0a0a0a", minHeight: "100vh", padding: "32px 20px 120px", maxWidth: 760, margin: "0 auto" }}>
 
         <Link href="/uploads" style={{ fontSize: 13, color: "#555", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 24 }}
           onMouseOver={e => (e.currentTarget.style.color = "#e8622c")}
@@ -356,7 +355,7 @@ export default function ReelsNewPage() {
         <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 6 }}>
           Custom <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>reel</span>
         </h1>
-        <p style={{ fontSize: 14, color: "#555", marginBottom: 32 }}>Choose which uploads and clips to include.</p>
+        <p style={{ fontSize: 14, color: "#555", marginBottom: 28 }}>Pick clips from any game. Hit clips are pre-selected.</p>
 
         {error && (
           <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>
@@ -368,116 +367,90 @@ export default function ReelsNewPage() {
           <div style={{ padding: "48px 24px", borderRadius: 16, background: "#141414", border: "1px solid #222", color: "#555", fontSize: 15, textAlign: "center" }}>
             <span className="spinner" />Loading clips…
           </div>
+        ) : groups.length === 0 ? (
+          <div style={{ padding: "48px 24px", borderRadius: 16, background: "#141414", border: "1px solid #222", color: "#555", fontSize: 15, textAlign: "center" }}>
+            No processed uploads yet.
+          </div>
         ) : (
-          <>
-            {/* ── Step 1: Uploads ── */}
-            <div className="section-label">Step 1 — Select uploads</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 0 }}>
-              {uploads.map(u => {
-                const on = enabledUploads.has(u.id);
-                const clips = clipsByUpload[u.id] ?? [];
-                const hits = clips.filter(c => c.is_hit).length;
-                return (
-                  <div key={u.id} className={`upload-toggle${on ? " on" : ""}`} onClick={() => toggleUpload(u.id)}>
-                    <input type="checkbox" className="cb" checked={on} onChange={() => {}} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: on ? "#fff" : "#666" }}>
-                        {fmtTime(u.created_at)}
+          groups.map((g, gi) => {
+            const hitCount   = g.clips.filter(c => c.is_hit).length;
+            const swingCount = g.clips.filter(c => c.is_swing && !c.is_hit).length;
+            const selCount   = g.clips.filter(c => selectedClips.has(c.id)).length;
+            const allSel     = allSelectedInGroup(g);
+            const noneSel    = noneSelectedInGroup(g);
+
+            return (
+              <div key={g.key} className="game-block">
+                {/* ── Game header row ── */}
+                <div className="game-header-row" onClick={() => toggleCollapse(g.key)}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <i className={`chevron${g.collapsed ? "" : " open"}`}>▶</i>
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "1.5px", color: "#444" }}>
+                        Game {groups.length - gi}
                       </div>
-                      <div style={{ fontSize: 11, color: "#555", marginTop: 2 }}>
-                        {clips.length} clip{clips.length !== 1 ? "s" : ""}{hits > 0 ? ` · ${hits} hit${hits !== 1 ? "s" : ""}` : ""}
-                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>{fmtGameLabel(g.uploads)}</div>
                     </div>
-                    <div style={{ fontSize: 12, color: on ? "#e8622c" : "#333", fontWeight: 600 }}>
-                      {on ? "Included" : "Excluded"}
+                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                      {hitCount > 0 && <span className="pill hit">⚾ {hitCount}</span>}
+                      {swingCount > 0 && <span className="pill swing">🏏 {swingCount}</span>}
+                      <span className="pill">{g.clips.length} clips</span>
+                      {selCount > 0 && (
+                        <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "rgba(232,98,44,0.12)", border: "1px solid rgba(232,98,44,0.3)", color: "#e8622c" }}>
+                          {selCount} selected
+                        </span>
+                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                  {/* Select/deselect all — stop propagation so it doesn't toggle collapse */}
+                  <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+                    <button className="btn-secondary" onClick={() => selectAllInGroup(g)} disabled={allSel}>All</button>
+                    <button className="btn-secondary" onClick={() => deselectAllInGroup(g)} disabled={noneSel}>None</button>
+                  </div>
+                </div>
 
-            <div className="divider" />
-
-            {/* ── Step 2: Clips ── */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
-              <div className="section-label" style={{ margin: 0 }}>
-                Step 2 — Select clips
-                <span style={{ marginLeft: 8, color: "#e8622c", fontWeight: 700 }}>({selectedVisible} selected)</span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button className="btn-secondary" onClick={selectAllVisible} disabled={allSelected}>Select all</button>
-                <button className="btn-secondary" onClick={deselectAllVisible} disabled={noneSelected}>Deselect all</button>
-              </div>
-            </div>
-
-            {visibleClips.length === 0 ? (
-              <div style={{ padding: "32px 24px", borderRadius: 14, background: "#141414", border: "1px solid #222", color: "#555", fontSize: 14, textAlign: "center" }}>
-                No clips available — enable at least one upload above.
-              </div>
-            ) : (
-              <>
-                {hitClips.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, color: "#444", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>
-                      ⚾ Hits ({hitClips.length})
+                {/* ── Clip grid (collapsible) ── */}
+                {!g.collapsed && (
+                  g.clips.length === 0 ? (
+                    <div style={{ padding: "20px 16px", background: "#0d0d0d", color: "#444", fontSize: 13, textAlign: "center" }}>
+                      No clips for this game yet.
                     </div>
-                    <div className="clips-grid" style={{ marginBottom: 20 }}>
-                      {hitClips.map(c => (
-                        <ClipCard key={c.id} clip={c} selected={selectedClips.has(c.id)} onToggle={() => toggleClip(c.id)} thumbnailUrl={thumbsByClip[c.id]} />
-                      ))}
+                  ) : (
+                    <div style={{ background: "#0d0d0d" }}>
+                      <div className="clips-grid">
+                        {g.clips.map(c => (
+                          <ClipCard
+                            key={c.id}
+                            clip={c}
+                            selected={selectedClips.has(c.id)}
+                            onToggle={() => toggleClip(c.id)}
+                            thumbnailUrl={thumbsByClip[c.id]}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </>
+                  )
                 )}
-                {swingClips.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, color: "#444", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>
-                      🏏 Swings / misses ({swingClips.length})
-                    </div>
-                    <div className="clips-grid" style={{ marginBottom: 20 }}>
-                      {swingClips.map(c => (
-                        <ClipCard key={c.id} clip={c} selected={selectedClips.has(c.id)} onToggle={() => toggleClip(c.id)} thumbnailUrl={thumbsByClip[c.id]} />
-                      ))}
-                    </div>
-                  </>
-                )}
-                {otherClips.length > 0 && (
-                  <>
-                    <div style={{ fontSize: 11, color: "#444", fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>
-                      Other ({otherClips.length})
-                    </div>
-                    <div className="clips-grid">
-                      {otherClips.map(c => (
-                        <ClipCard key={c.id} clip={c} selected={selectedClips.has(c.id)} onToggle={() => toggleClip(c.id)} thumbnailUrl={thumbsByClip[c.id]} />
-                      ))}
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-          </>
+              </div>
+            );
+          })
         )}
       </div>
 
       {/* ── Sticky footer ── */}
       {!loading && (
         <div className="sticky-footer">
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
             <div style={{ fontSize: 14, fontWeight: 600 }}>
-              {selectedVisible} clip{selectedVisible !== 1 ? "s" : ""} selected
+              {totalSelected} clip{totalSelected !== 1 ? "s" : ""} selected
             </div>
             <div style={{ fontSize: 12, color: "#555" }}>
-              from {enabledUploads.size} upload{enabledUploads.size !== 1 ? "s" : ""}
+              across {groups.filter(g => g.clips.some(c => selectedClips.has(c.id))).length} game{groups.filter(g => g.clips.some(c => selectedClips.has(c.id))).length !== 1 ? "s" : ""}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div className="mode-toggle">
-              <button className={`mode-btn${mode === "hits_only" ? " active" : ""}`} onClick={() => setMode("hits_only")}>Hits only</button>
-              <button className={`mode-btn${mode === "all_swings" ? " active" : ""}`} onClick={() => setMode("all_swings")}>All swings</button>
-            </div>
-            <button className="btn-primary" onClick={handleCompile} disabled={compiling || selectedVisible === 0}>
-              {compiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
-            </button>
-          </div>
+          <button className="btn-primary" onClick={handleCompile} disabled={compiling || totalSelected === 0}>
+            {compiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
+          </button>
         </div>
       )}
     </>
