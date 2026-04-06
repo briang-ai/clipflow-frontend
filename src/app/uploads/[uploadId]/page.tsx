@@ -32,19 +32,18 @@ export default function UploadDetailPage() {
   const params = useParams();
   const uploadId = String(params.uploadId);
 
-  const [clips, setClips] = useState<ClipRow[]>([]);
+  const [clips, setClips]               = useState<ClipRow[]>([]);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("processing");
-  const [error, setError] = useState<string>("");
-  const [savingId, setSavingId] = useState<string>("");
-  const [openingId, setOpeningId] = useState<string>("");
+  const [error, setError]               = useState<string>("");
+  const [savingId, setSavingId]         = useState<string>("");
+  const [openingId, setOpeningId]       = useState<string>("");
   const [downloadingId, setDownloadingId] = useState<string>("");
-  const [downloadPct, setDownloadPct] = useState<number>(0);
+  const [downloadPct, setDownloadPct]   = useState<number>(0);
 
   const [draft, setDraft] = useState<
     Record<string, { player_name: string; jersey_number: string }>
   >({});
 
-  // ── clip polling ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!uploadId) return;
     let cancelled = false;
@@ -94,7 +93,6 @@ export default function UploadDetailPage() {
 
   const isProcessing = uploadStatus !== "complete" && uploadStatus !== "error";
 
-  // ── clip helpers ──────────────────────────────────────────────────────────
   async function saveLabels(clipId: string) {
     try {
       setError(""); setSavingId(clipId);
@@ -123,7 +121,6 @@ export default function UploadDetailPage() {
       setError(""); setOpeningId(clipId);
       const url = await getClipUrl(clipId);
       if (!url) return;
-      // Play inline — open in new tab
       const a = document.createElement("a");
       a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
@@ -141,10 +138,7 @@ export default function UploadDetailPage() {
     finally { setDownloadingId(""); setDownloadPct(0); }
   }
 
-  const loadingStyle = {
-    background: "#0a0a0a", minHeight: "100vh", padding: 24,
-    color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif",
-  };
+  const loadingStyle = { background: "#0a0a0a", minHeight: "100vh", padding: 24, color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif" };
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
@@ -174,9 +168,11 @@ export default function UploadDetailPage() {
         .btn-secondary:hover{border-color:rgba(232,98,44,0.3);color:#fff}
         .btn-secondary:disabled{opacity:0.5;cursor:not-allowed}
 
+        .btn-custom{padding:9px 16px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(232,98,44,0.35);color:#e8622c;font-weight:600;font-size:13px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,color 0.2s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+        .btn-custom:hover{border-color:#e8622c;color:#f0a830}
+
         .section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#555;margin-bottom:12px;margin-top:28px}
 
-        /* Download progress bar */
         .dl-bar-wrap{width:100%;height:3px;background:#222;border-radius:3px;overflow:hidden;margin-top:6px}
         .dl-bar{height:100%;background:linear-gradient(135deg,#e8622c,#f0a830);transition:width 0.2s}
 
@@ -197,9 +193,17 @@ export default function UploadDetailPage() {
           ← Back to uploads
         </Link>
 
-        <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px", marginBottom: 8 }}>
-          View <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>clips</span>
-        </h1>
+        {/* Header row — title + Custom Reel button */}
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 8 }}>
+          <h1 style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.2, letterSpacing: "-0.5px" }}>
+            View <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>clips</span>
+          </h1>
+          {uploadStatus === "complete" && (
+            <Link href={`/reels/new?game=${uploadId}`} className="btn-custom">
+              ✂️ Custom Reel
+            </Link>
+          )}
+        </div>
 
         {isProcessing && (
           <div style={{ marginBottom: 24, padding: "14px 18px", borderRadius: 14, background: "rgba(232,98,44,0.06)", border: "1px solid rgba(232,98,44,0.2)", color: "#f0a830", fontSize: 14, display: "flex", alignItems: "center" }}>
@@ -283,7 +287,6 @@ function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, down
             )}
           </div>
           {c.ai_reason && <div style={{ fontSize: 13, color: "#555", marginBottom: 8, lineHeight: 1.5 }}>{c.ai_reason}</div>}
-          {/* Download progress bar */}
           {isDownloading && downloadPct > 0 && (
             <div className="dl-bar-wrap">
               <div className="dl-bar" style={{ width: `${downloadPct}%` }} />

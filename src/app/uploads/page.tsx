@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { API_BASE } from "@/lib/api";
 import Nav from "@/components/Nav";
@@ -125,14 +126,13 @@ function UploadCard({
   onToggle: () => void;
   onDelete: () => void;
 }) {
-  const [hovered, setHovered]       = useState(false);
-  const [clipUrl, setClipUrl]       = useState<string | null>(null);
+  const [hovered, setHovered]         = useState(false);
+  const [clipUrl, setClipUrl]         = useState<string | null>(null);
   const [loadingClip, setLoadingClip] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   async function handleMouseEnter() {
     setHovered(true);
-    // Only try to fetch a clip URL once, and only for completed uploads
     if (!clipUrl && !loadingClip && u.status === "complete") {
       setLoadingClip(true);
       try {
@@ -155,13 +155,9 @@ function UploadCard({
 
   function handleMouseLeave() {
     setHovered(false);
-    if (videoRef.current) {
-      videoRef.current.pause();
-      videoRef.current.currentTime = 0;
-    }
+    if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
   }
 
-  // Auto-play once clipUrl lands and mouse is still over the card
   useEffect(() => {
     if (hovered && clipUrl && videoRef.current) {
       videoRef.current.play().catch(() => {});
@@ -174,93 +170,40 @@ function UploadCard({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* ── Media area ── */}
       <div style={{ position: "relative", width: "100%", aspectRatio: "16/9", background: "#0d0d0d", overflow: "hidden" }}>
-
-        {/* Static JPEG thumbnail — shown until video is ready */}
         {thumbnailUrl ? (
-          <img
-            src={thumbnailUrl}
-            alt=""
-            style={{
-              position: "absolute", inset: 0,
-              width: "100%", height: "100%",
-              objectFit: "cover",
-              opacity: hovered && clipUrl ? 0 : 1,
-              transition: "opacity 0.25s",
-            }}
-          />
+          <img src={thumbnailUrl} alt="" style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover",
+            opacity: hovered && clipUrl ? 0 : 1, transition: "opacity 0.25s",
+          }} />
         ) : (
-          /* Placeholder when thumbnail not yet available */
-          <div style={{
-            position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#333", fontSize: 28,
-          }}>
-            🎥
-          </div>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#333", fontSize: 28 }}>🎥</div>
         )}
-
-        {/* Video — crossfades in on hover once src is ready */}
         {u.status === "complete" && (
-          <video
-            ref={videoRef}
-            src={clipUrl ?? undefined}
-            muted
-            playsInline
-            loop
-            style={{
-              position: "absolute", inset: 0,
-              width: "100%", height: "100%",
-              objectFit: "cover",
-              opacity: hovered && clipUrl ? 1 : 0,
-              transition: "opacity 0.25s",
-            }}
-          />
+          <video ref={videoRef} src={clipUrl ?? undefined} muted playsInline loop style={{
+            position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover",
+            opacity: hovered && clipUrl ? 1 : 0, transition: "opacity 0.25s",
+          }} />
         )}
-
-        {/* Spinner while fetching clip URL */}
         {hovered && loadingClip && (
-          <div style={{
-            position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.35)",
-          }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}>
             <span className="spinner" />
           </div>
         )}
-
-        {/* Non-complete status overlay */}
         {u.status !== "complete" && (
-          <div style={{
-            position: "absolute", inset: 0,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            background: "rgba(0,0,0,0.55)", fontSize: 12, color: "#f0a830",
-          }}>
-            {u.status === "processing"
-              ? <><span className="spinner" />Processing…</>
-              : u.status === "error" ? "⚠ Error" : "⏳ Queued"}
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)", fontSize: 12, color: "#f0a830" }}>
+            {u.status === "processing" ? <><span className="spinner" />Processing…</> : u.status === "error" ? "⚠ Error" : "⏳ Queued"}
           </div>
         )}
-
-        {/* "live" badge when video is playing */}
         {hovered && clipUrl && (
-          <div style={{
-            position: "absolute", bottom: 8, right: 8,
-            background: "rgba(0,0,0,0.6)", borderRadius: 6,
-            padding: "2px 7px", fontSize: 11, color: "#fff",
-          }}>
+          <div style={{ position: "absolute", bottom: 8, right: 8, background: "rgba(0,0,0,0.6)", borderRadius: 6, padding: "2px 7px", fontSize: 11, color: "#fff" }}>
             ▶ live
           </div>
         )}
-
-        {/* Selection checkbox */}
         <div style={{ position: "absolute", top: 8, left: 8 }}>
           <input type="checkbox" className="cb" checked={isSelected} onChange={onToggle} />
         </div>
       </div>
-
-      {/* ── Info row ── */}
       <div className="upload-info">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
           <div style={{ fontSize: 12, color: "#666" }}>{fmtTime(u.created_at)}</div>
@@ -270,22 +213,14 @@ function UploadCard({
         </div>
         {summary && (
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
-            {summary.hit_count > 0 && (
-              <span className="pill hit">⚾ {summary.hit_count} hit{summary.hit_count !== 1 ? "s" : ""}</span>
-            )}
+            {summary.hit_count > 0 && <span className="pill hit">⚾ {summary.hit_count} hit{summary.hit_count !== 1 ? "s" : ""}</span>}
             {summary.swing_count > summary.hit_count && (
-              <span className="pill swing">
-                🏏 {summary.swing_count - summary.hit_count} miss{summary.swing_count - summary.hit_count !== 1 ? "es" : ""}
-              </span>
+              <span className="pill swing">🏏 {summary.swing_count - summary.hit_count} miss{summary.swing_count - summary.hit_count !== 1 ? "es" : ""}</span>
             )}
             {summary.total_clips === 0 && <span className="pill">Processing…</span>}
           </div>
         )}
-        <Link
-          href={`/uploads/${u.id}`}
-          className="btn-primary"
-          style={{ display: "block", textAlign: "center", textDecoration: "none", width: "100%", padding: "6px 0" }}
-        >
+        <Link href={`/uploads/${u.id}`} className="btn-primary" style={{ display: "block", textAlign: "center", textDecoration: "none", width: "100%", padding: "6px 0" }}>
           View clips
         </Link>
       </div>
@@ -297,6 +232,7 @@ function UploadCard({
 
 export default function UploadsPage() {
   const { isLoaded, isSignedIn, user } = useUser();
+  const router = useRouter();
   const [uploads, setUploads]               = useState<UploadRow[]>([]);
   const [error, setError]                   = useState<string>("");
   const [reelsByUpload, setReelsByUpload]   = useState<Record<string, ReelRow[]>>({});
@@ -321,7 +257,6 @@ export default function UploadsPage() {
 
   const gameGroups = useMemo(() => groupIntoGames(myUploads), [myUploads]);
 
-  // Initial uploads fetch
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
     fetch(`${API_BASE}/api/uploads/recent?limit=50`, { cache: "no-store" })
@@ -329,7 +264,6 @@ export default function UploadsPage() {
       .catch(e => setError(`Network error: ${String(e)}`));
   }, [isLoaded, isSignedIn]);
 
-  // Reels, summaries, and thumbnails for current uploads
   useEffect(() => {
     if (!myUploads.length) return;
     const ids = myUploads.map(u => u.id);
@@ -338,7 +272,6 @@ export default function UploadsPage() {
     fetchThumbnailsForUploads(ids).then(setThumbnails);
   }, [myUploads]);
 
-  // Poll while any reel is still compiling
   useEffect(() => {
     const allReels = Object.values(reelsByUpload).flat();
     const stillWorking = allReels.some(r => r.status === "pending" || r.status === "processing");
@@ -350,7 +283,6 @@ export default function UploadsPage() {
     return () => clearTimeout(timer);
   }, [reelsByUpload, myUploads]);
 
-  // ── compile ───────────────────────────────────────────────────────────────
   async function compileGroup(group: UploadRow[], groupKey: string) {
     setCompileError(""); setCompilingGroup(groupKey);
     const mode = modeByGroup[groupKey] ?? "hits_only";
@@ -365,12 +297,7 @@ export default function UploadsPage() {
           allHitClipIds.push(...hits);
         } catch { /* silent */ }
       }));
-
-      if (!allHitClipIds.length) {
-        setCompileError("No hit clips found. Try uploading more game footage.");
-        setCompilingGroup(""); return;
-      }
-
+      if (!allHitClipIds.length) { setCompileError("No hit clips found. Try uploading more game footage."); setCompilingGroup(""); return; }
       const res = await fetch(`${API_BASE}/api/reels/compile`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: group[0].id, clip_ids: allHitClipIds, watermark: true, mode }),
@@ -381,7 +308,6 @@ export default function UploadsPage() {
     } catch (e: any) { setCompileError(String(e)); setCompilingGroup(""); }
   }
 
-  // ── delete helpers ────────────────────────────────────────────────────────
   function toggleSelect(id: string) {
     setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }
@@ -420,7 +346,6 @@ export default function UploadsPage() {
     finally { setDeletingIds(prev => { const n = new Set(prev); uploadIds.forEach(id => n.delete(id)); return n; }); }
   }
 
-  // ── reel helpers ──────────────────────────────────────────────────────────
   async function getReelUrl(reelId: string): Promise<string | null> {
     const res = await fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" });
     if (!res.ok) { setCompileError(await res.text()); return null; }
@@ -476,7 +401,6 @@ export default function UploadsPage() {
         .upload-card{border-radius:14px;background:#141414;border:1px solid #222;overflow:hidden;transition:border-color 0.2s;cursor:default}
         .upload-card:hover{border-color:rgba(232,98,44,0.25)}
         .upload-card.selected{border-color:rgba(232,98,44,0.5);background:#161010}
-
         .upload-info{padding:12px 14px}
 
         .reel-card{padding:14px 16px;border-radius:14px;background:#0f0f0f;border:1px solid #1e1e1e;transition:border-color 0.2s}
@@ -506,6 +430,9 @@ export default function UploadsPage() {
         .btn-compile{padding:9px 16px;border-radius:10px;border:none;background:linear-gradient(135deg,#e8622c,#f0a830);color:#fff;font-weight:600;font-size:13px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:opacity 0.2s}
         .btn-compile:hover{opacity:0.9}
         .btn-compile:disabled{opacity:0.5;cursor:not-allowed}
+
+        .btn-custom{padding:9px 16px;border-radius:10px;background:#1a1a1a;border:1px solid rgba(232,98,44,0.35);color:#e8622c;font-weight:600;font-size:13px;font-family:'Outfit',sans-serif;cursor:pointer;white-space:nowrap;transition:border-color 0.2s,color 0.2s;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+        .btn-custom:hover{border-color:#e8622c;color:#f0a830}
 
         .mode-toggle{display:flex;border-radius:8px;overflow:hidden;border:1px solid #2a2a2a;background:#111}
         .mode-btn{padding:5px 10px;font-size:11px;font-weight:600;font-family:'Outfit',sans-serif;cursor:pointer;border:none;background:transparent;color:#555;transition:background 0.15s,color 0.15s;white-space:nowrap}
@@ -539,7 +466,6 @@ export default function UploadsPage() {
       <Nav />
       <RecordFAB />
 
-      {/* Delete confirm modal */}
       {confirmModal && (
         <div className="modal-overlay" onClick={() => setConfirmModal(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
@@ -562,7 +488,6 @@ export default function UploadsPage() {
 
       <div style={{ background: "#0a0a0a", minHeight: "100vh", fontFamily: "'Outfit',-apple-system,system-ui,sans-serif", padding: "32px 20px", maxWidth: 720, margin: "0 auto" }}>
 
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px" }}>
             My <span style={{ background: "linear-gradient(135deg,#e8622c,#f0a830)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>uploads</span>
@@ -594,17 +519,16 @@ export default function UploadsPage() {
           </div>
         ) : (
           gameGroups.map((group, gi) => {
-            const groupKey = group[0].id;
-            const groupReels = group.flatMap(u => reelsByUpload[u.id] ?? []);
+            const groupKey    = group[0].id;
+            const groupReels  = group.flatMap(u => reelsByUpload[u.id] ?? []);
             const isCompiling = compilingGroup === groupKey || groupReels.some(r => r.status === "pending" || r.status === "processing");
             const allGroupSelected = group.every(u => selectedIds.has(u.id));
-            const mode = modeByGroup[groupKey] ?? "hits_only";
+            const mode        = modeByGroup[groupKey] ?? "hits_only";
             const groupHits   = group.reduce((sum, u) => sum + (summaries[u.id]?.hit_count ?? 0), 0);
             const groupSwings = group.reduce((sum, u) => sum + (summaries[u.id]?.swing_count ?? 0), 0);
 
             return (
               <div key={groupKey}>
-                {/* Game header */}
                 <div className="game-header">
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input type="checkbox" className="cb" checked={allGroupSelected} onChange={() => toggleSelectAll(group)} title="Select all" />
@@ -623,9 +547,15 @@ export default function UploadsPage() {
 
                   {/* Compile controls */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                    <button className="btn-compile" onClick={() => compileGroup(group, groupKey)} disabled={isCompiling}>
-                      {isCompiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {/* Custom Reel button */}
+                      <Link href={`/reels/new?game=${groupKey}`} className="btn-custom">
+                        ✂️ Custom
+                      </Link>
+                      <button className="btn-compile" onClick={() => compileGroup(group, groupKey)} disabled={isCompiling}>
+                        {isCompiling ? <><span className="spinner" />Compiling…</> : "🎬 Compile Reel"}
+                      </button>
+                    </div>
                     <div className="mode-toggle">
                       <button className={`mode-btn${mode === "hits_only" ? " active" : ""}`} onClick={() => setModeByGroup(p => ({ ...p, [groupKey]: "hits_only" }))}>
                         Hits only
@@ -638,7 +568,6 @@ export default function UploadsPage() {
                 </div>
 
                 <div className="game-body">
-                  {/* Reel cards */}
                   {groupReels.map(reel => (
                     <div key={reel.id} className={`reel-card${reel.status === "complete" ? " complete" : ""}`}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
@@ -681,7 +610,6 @@ export default function UploadsPage() {
                     </div>
                   ))}
 
-                  {/* Upload grid */}
                   <div className="uploads-grid">
                     {group.map(u => (
                       <UploadCard
