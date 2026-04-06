@@ -215,13 +215,6 @@ export default function ReelsNewPage() {
         });
         setGroups(builtGroups);
 
-        // Pre-select all hit clips
-        const hitIds = new Set<string>();
-        for (const g of builtGroups)
-          for (const c of g.clips)
-            if (c.is_hit === true) hitIds.add(c.id);
-        setSelectedClips(hitIds);
-
         // Fetch thumbnails for all clips
         const allClips = builtGroups.flatMap(g => g.clips);
         const thumbMap: Record<string, string> = {};
