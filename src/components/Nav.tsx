@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 
 const navLinks = [
-  { href: "/upload",  label: "🎥 Record" },
-  { href: "/uploads", label: "📂 My Uploads" },
-  { href: "/plans",   label: "⭐ Plans" },
+  { href: "/how-it-works", label: "✨ How It Works" },
+  { href: "/upload",       label: "🎥 Record" },
+  { href: "/uploads",      label: "📂 My Uploads" },
+  { href: "/plans",        label: "⭐ Plans" },
 ];
 
 export default function Nav() {
