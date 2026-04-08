@@ -1,6 +1,48 @@
-"use client";
+import type { Metadata } from "next";
 import Link from "next/link";
 import Nav from "@/components/Nav";
+
+export const metadata: Metadata = {
+  title: "How It Works | ClipFlow — Youth Baseball Highlight Reel Maker",
+  description:
+    "ClipFlow uses AI to automatically detect hits and swings from your youth baseball game footage and compiles a professional highlight reel in minutes. No editing skills needed.",
+  keywords: [
+    "youth baseball highlight reel",
+    "little league highlight video",
+    "baseball highlight reel maker",
+    "AI baseball video editor",
+    "youth baseball video app",
+    "automatic baseball highlight reel",
+    "little league video maker",
+    "baseball parent app",
+  ],
+  openGraph: {
+    title: "How ClipFlow Works — AI-Powered Youth Baseball Highlight Reels",
+    description:
+      "Film the game, let AI find every hit, curate your reel, and share in minutes. ClipFlow turns a full game's footage into a highlight reel your family will keep forever.",
+    url: "https://clipflow.pro/how-it-works",
+    siteName: "ClipFlow",
+    images: [
+      {
+        url: "https://clipflow.pro/og-how-it-works.png",
+        width: 1200,
+        height: 630,
+        alt: "ClipFlow — Youth Baseball Highlight Reel Maker",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "How ClipFlow Works — AI-Powered Youth Baseball Highlight Reels",
+    description:
+      "Film the game, let AI find every hit, curate your reel, and share in minutes.",
+    images: ["https://clipflow.pro/og-how-it-works.png"],
+  },
+  alternates: {
+    canonical: "https://clipflow.pro/how-it-works",
+  },
+};
 
 const steps = [
   {
@@ -36,6 +78,28 @@ const steps = [
 export default function HowItWorksPage() {
   return (
     <>
+      {/* JSON-LD structured data — HowTo schema for Google rich results */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "HowTo",
+            "name": "How to Make a Youth Baseball Highlight Reel with ClipFlow",
+            "description":
+              "ClipFlow uses AI to automatically detect hits and swings from youth baseball footage and compiles a professional highlight reel in minutes.",
+            "image": "https://clipflow.pro/og-how-it-works.png",
+            "totalTime": "PT10M",
+            "tool": [{ "@type": "HowToTool", "name": "ClipFlow app" }],
+            "step": steps.map((s) => ({
+              "@type": "HowToStep",
+              "name": s.title,
+              "text": s.description,
+              "position": parseInt(s.number),
+            })),
+          }),
+        }}
+      />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
         *{margin:0;padding:0;box-sizing:border-box}
@@ -219,13 +283,13 @@ export default function HowItWorksPage() {
       <div className="hiw-hero">
         <div className="hiw-eyebrow">How ClipFlow works</div>
         <h1 className="hiw-headline">
-          From the dugout<br />
-          <span>to forever.</span>
+          The easiest way to make a<br />
+          <span>youth baseball highlight reel.</span>
         </h1>
         <p className="hiw-subhead">
-          Your kid's best moments happen fast. ClipFlow captures every hit, every swing,
-          and turns a full game's footage into a highlight reel you'll share for years —
-          in just a few taps.
+          ClipFlow's AI watches your Little League game footage, automatically detects
+          every hit and swing, and compiles a professional highlight reel in minutes —
+          no video editing skills required.
         </p>
         <div className="hiw-cta-row">
           <Link href="/sign-up" className="btn-primary">🎥 Sign up to get started</Link>
@@ -263,10 +327,11 @@ export default function HowItWorksPage() {
 
       {/* Bottom CTA */}
       <div className="hiw-bottom-cta">
-        <h2>Ready to make your first<br /><span>highlight reel?</span></h2>
+        <h2>Start making your child's<br /><span>baseball highlight reel today.</span></h2>
         <p>
-          Upload your game footage and let ClipFlow do the work.
-          Your player's best moments deserve to be remembered.
+          Join baseball parents who use ClipFlow to capture every hit,
+          build lasting highlight reels, and share their player's best moments
+          with coaches, family, and teammates.
         </p>
         <Link href="/sign-up" className="btn-primary">Sign up to get started</Link>
       </div>
