@@ -228,7 +228,7 @@ export default function HowItWorksPage() {
           in just a few taps.
         </p>
         <div className="hiw-cta-row">
-          <Link href="/upload" className="btn-primary">🎥 Try it free</Link>
+          <Link href="/sign-up" className="btn-primary">🎥 Sign up to get started</Link>
           <Link href="/uploads" className="btn-ghost">View my uploads</Link>
         </div>
       </div>
@@ -268,7 +268,7 @@ export default function HowItWorksPage() {
           Upload your game footage and let ClipFlow do the work.
           Your player's best moments deserve to be remembered.
         </p>
-        <Link href="/upload" className="btn-primary">Get started — it's free</Link>
+        <Link href="/sign-up" className="btn-primary">Sign up to get started</Link>
       </div>
 
       <p className="hiw-slogan">Find Your Flow</p>
