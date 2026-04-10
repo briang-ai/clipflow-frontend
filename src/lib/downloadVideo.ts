@@ -1,13 +1,42 @@
 /**
  * Downloads a video file to the device.
- * Fetches as blob so mobile browsers save to Files/Downloads
- * instead of playing inline. Falls back to direct link on error.
+ *
+ * iOS Safari: opens the presigned URL in a new tab so the native player
+ * shows a "Save Video" button → saves directly to the camera roll.
+ *
+ * Android / desktop: fetches as blob and triggers a Save dialog to the
+ * Downloads folder, with optional progress callback.
  */
+
+function isIosSafari(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const isIos = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
+  // Safari on iOS — excludes Chrome/Firefox on iOS which use a different engine
+  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/.test(ua);
+  return isIos && isSafari;
+}
+
 export async function downloadVideo(
   url: string,
   filename: string,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
+  // iOS Safari: open directly so native player offers "Save Video" → camera roll
+  if (isIosSafari()) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    return;
+  }
+
+  // Android / desktop: blob fetch → forced Save dialog
+  const safeFilename = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
+
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
@@ -32,17 +61,16 @@ export async function downloadVideo(
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = blobUrl;
-    a.download = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
+    a.download = safeFilename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    // Small delay before revoking so the browser has time to start the download
     setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
   } catch {
-    // Fallback: direct link (better than nothing)
+    // Fallback: direct link
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
+    a.download = safeFilename;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
     document.body.appendChild(a);
