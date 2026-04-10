@@ -382,16 +382,13 @@ export default function UploadsPage() {
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
     try {
       const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      // Open window synchronously before any await so Safari doesn't block it as a popup
-      const win = isMobile ? window.open("", "_blank") : null;
-      const url = await getReelUrl(reelId);
-      if (!url) { win?.close(); return; }
-      if (isMobile && win) {
-        win.location.href = url;
-        setReelSaveHint("Tap the share icon (⬆) at the bottom of the screen, then tap Save Video to save to your camera roll.");
-        setTimeout(() => setReelSaveHint(""), 8000);
+      if (isMobile) {
+        // Open our own player page — gives user proper Save + Share buttons
+        window.open(`/reels/${reelId}/play`, "_blank");
         return;
       }
+      const url = await getReelUrl(reelId);
+      if (!url) return;
       await downloadVideo(url, `highlight_${playerName}_${gameDate}`);
     } catch (e: any) {
       setCompileError(`Download failed: ${String(e)}`);
