@@ -379,6 +379,11 @@ export default function UploadsPage() {
       const url = await getReelUrl(reelId);
       if (!url) return;
       const filename = `highlight_${playerName}_${gameDate}`;
+      // On mobile open directly in same gesture context
+      if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
+        window.location.href = url;
+        return;
+      }
       await downloadVideo(url, filename);
     } catch (e: any) {
       setCompileError(`Download failed: ${String(e)}`);
