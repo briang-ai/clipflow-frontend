@@ -244,7 +244,8 @@ export default function UploadsPage() {
   const [selectedIds, setSelectedIds]       = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds]       = useState<Set<string>>(new Set());
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
-  const [reelSaveHint, setReelSaveHint] = useState<string>("");
+  const [copiedReelId, setCopiedReelId]     = useState<string>("");
+  const [reelSaveHint, setReelSaveHint]     = useState<string>("");
   const [modeByGroup, setModeByGroup]       = useState<Record<string, CompileMode>>({});
   const [confirmModal, setConfirmModal]     = useState<{
     mode: "single" | "bulk"; uploadIds: string[]; label: string;
@@ -352,12 +353,14 @@ export default function UploadsPage() {
     if (!res.ok) { setCompileError(await res.text()); return null; }
     return (await res.json())?.download_url ?? null;
   }
+
   async function openReel(reelId: string) {
     const win = window.open("", "_blank");
     const url = await getReelUrl(reelId);
     if (!url) { win?.close(); return; }
     if (win) win.location.href = url;
   }
+
   async function shareReel(reelId: string) {
     const shareUrl = `${window.location.origin}/share/${reelId}`;
     try {
@@ -365,6 +368,7 @@ export default function UploadsPage() {
       else { await navigator.clipboard.writeText(shareUrl); setCopiedReelId(reelId); setTimeout(() => setCopiedReelId(""), 2000); }
     } catch { /* cancelled */ }
   }
+
   async function deleteReel(reelId: string, uploadId: string) {
     setDeletingReelIds(prev => new Set([...prev, reelId]));
     try {
@@ -374,6 +378,7 @@ export default function UploadsPage() {
     } catch (e: any) { setCompileError(`Delete failed: ${String(e)}`); }
     finally { setDeletingReelIds(prev => { const n = new Set(prev); n.delete(reelId); return n; }); }
   }
+
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
     try {
       const url = await getReelUrl(reelId);
@@ -556,10 +561,8 @@ export default function UploadsPage() {
                     </div>
                   </div>
 
-                  {/* Compile controls */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                      {/* Custom Reel button */}
                       <Link href={`/reels/new?game=${groupKey}`} className="btn-custom">
                         ✂️ Custom
                       </Link>
