@@ -1,20 +1,16 @@
 /**
  * Downloads a video file to the device.
  *
- * iOS Safari: opens the presigned URL in a new tab so the native player
- * shows a "Save Video" button → saves directly to the camera roll.
+ * Mobile (any): opens the presigned URL directly in a new tab.
+ * iOS Safari will show a native player with "Save Video" → camera roll.
+ * Android Chrome will trigger a download.
  *
- * Android / desktop: fetches as blob and triggers a Save dialog to the
- * Downloads folder, with optional progress callback.
+ * Desktop: fetches as blob for a forced Save dialog with progress tracking.
  */
 
-function isIosSafari(): boolean {
+function isMobile(): boolean {
   if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  const isIos = /iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream;
-  // Safari on iOS — excludes Chrome/Firefox on iOS which use a different engine
-  const isSafari = /Safari/.test(ua) && !/CriOS|FxiOS|OPiOS|EdgiOS/.test(ua);
-  return isIos && isSafari;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 }
 
 export async function downloadVideo(
@@ -22,21 +18,23 @@ export async function downloadVideo(
   filename: string,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
-  // iOS Safari: open directly so native player offers "Save Video" → camera roll
-  if (isIosSafari()) {
+  const safeFilename = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
+
+  // Mobile: open directly — avoids async blob fetch which loses the user
+  // gesture context and gets silently blocked by iOS/Android browsers.
+  if (isMobile()) {
     const a = document.createElement("a");
     a.href = url;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
+    a.download = safeFilename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     return;
   }
 
-  // Android / desktop: blob fetch → forced Save dialog
-  const safeFilename = filename.endsWith(".mp4") ? filename : `${filename}.mp4`;
-
+  // Desktop: blob fetch → forced Save dialog with progress
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
