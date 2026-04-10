@@ -244,7 +244,7 @@ export default function UploadsPage() {
   const [selectedIds, setSelectedIds]       = useState<Set<string>>(new Set());
   const [deletingIds, setDeletingIds]       = useState<Set<string>>(new Set());
   const [deletingReelIds, setDeletingReelIds] = useState<Set<string>>(new Set());
-  const [copiedReelId, setCopiedReelId]     = useState<string>("");
+  const [reelSaveHint, setReelSaveHint] = useState<string>("");
   const [modeByGroup, setModeByGroup]       = useState<Record<string, CompileMode>>({});
   const [confirmModal, setConfirmModal]     = useState<{
     mode: "single" | "bulk"; uploadIds: string[]; label: string;
@@ -379,9 +379,10 @@ export default function UploadsPage() {
       const url = await getReelUrl(reelId);
       if (!url) return;
       const filename = `highlight_${playerName}_${gameDate}`;
-      // On mobile open directly in same gesture context
       if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
-        window.location.href = url;
+        window.open(url, "_blank");
+        setReelSaveHint("Tap the share icon (⬆) at the bottom of the screen, then tap Save Video to save to your camera roll.");
+        setTimeout(() => setReelSaveHint(""), 8000);
         return;
       }
       await downloadVideo(url, filename);
@@ -507,6 +508,11 @@ export default function UploadsPage() {
 
         {error && <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>{error}</div>}
         {compileError && <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(252,165,165,0.08)", border: "1px solid rgba(252,165,165,0.2)", color: "#fca5a5", fontSize: 13 }}>{compileError}</div>}
+        {reelSaveHint && (
+          <div style={{ marginBottom: 20, padding: "12px 16px", borderRadius: 12, background: "rgba(240,168,48,0.08)", border: "1px solid rgba(240,168,48,0.25)", color: "#f0a830", fontSize: 13, lineHeight: 1.5 }}>
+            📱 {reelSaveHint}
+          </div>
+        )}
 
         {anySelected && (
           <div className="bulk-bar">
