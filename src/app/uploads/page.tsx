@@ -375,10 +375,14 @@ export default function UploadsPage() {
     finally { setDeletingReelIds(prev => { const n = new Set(prev); n.delete(reelId); return n; }); }
   }
   async function downloadReel(reelId: string, playerName: string, gameDate: string) {
-    const url = await getReelUrl(reelId);
-    if (!url) return;
-    const filename = `highlight_${playerName}_${gameDate}`;
-    await downloadVideo(url, filename);
+    try {
+      const url = await getReelUrl(reelId);
+      if (!url) return;
+      const filename = `highlight_${playerName}_${gameDate}`;
+      await downloadVideo(url, filename);
+    } catch (e: any) {
+      setCompileError(`Download failed: ${String(e)}`);
+    }
   }
 
   const loadingStyle = { background: "#0a0a0a", minHeight: "100vh", padding: 24, color: "#fff", fontFamily: "'Outfit', system-ui, sans-serif" };
