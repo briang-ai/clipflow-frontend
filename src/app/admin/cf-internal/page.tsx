@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
-const ADMIN_SECRET = process.env.NEXT_PUBLIC_ADMIN_SECRET ?? "";
 
 type Stats = {
   dau: number;
@@ -41,16 +40,13 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [refreshingBalance, setRefreshingBalance] = useState(false);
 
-  const adminHeaders = {
-    "Content-Type": "application/json",
-    "x-admin-secret": ADMIN_SECRET,
-    "x-clerk-user-id": user?.id ?? "",
-  };
+  // Admin access is checked on the server from your login token.
+  const adminHeaders = { "Content-Type": "application/json" };
 
   async function fetchBalance() {
     setRefreshingBalance(true);
     try {
-      const res = await fetch(`${API_BASE}/api/admin/anthropic-balance`, {
+      const res = await apiFetch(`/api/admin/anthropic-balance`, {
         headers: adminHeaders, cache: "no-store",
       });
       if (res.ok) setBalance(await res.json());
@@ -66,8 +62,8 @@ export default function AdminPage() {
         setError("");
 
         const [statsRes, usersRes] = await Promise.all([
-          fetch(`${API_BASE}/api/admin/stats`, { headers: adminHeaders, cache: "no-store" }),
-          fetch(`${API_BASE}/api/admin/users`, { headers: adminHeaders, cache: "no-store" }),
+          apiFetch(`/api/admin/stats`, { headers: adminHeaders, cache: "no-store" }),
+          apiFetch(`/api/admin/users`, { headers: adminHeaders, cache: "no-store" }),
         ]);
 
         if (statsRes.status === 403 || usersRes.status === 403) {

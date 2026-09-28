@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { downloadVideo } from "@/lib/downloadVideo";
 import Nav from "@/components/Nav";
 import RecordFAB from "@/components/RecordFAB";
@@ -59,8 +59,8 @@ export default function UploadDetailPage() {
       }
       try {
         const [statusRes, clipsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/debug/uploads/${uploadId}/counts`, { cache: "no-store" }),
-          fetch(`${API_BASE}/api/uploads/${uploadId}/clips`, { cache: "no-store" }),
+          apiFetch(`/api/debug/uploads/${uploadId}/counts`, { cache: "no-store" }),
+          apiFetch(`/api/uploads/${uploadId}/clips`, { cache: "no-store" }),
         ]);
         if (cancelled) return;
         if (!clipsRes.ok) { setError(await clipsRes.text()); return; }
@@ -97,7 +97,7 @@ export default function UploadDetailPage() {
     try {
       setError(""); setSavingId(clipId);
       const payload = draft[clipId] ?? { player_name: "", jersey_number: "" };
-      const res = await fetch(`${API_BASE}/api/clips/${clipId}`, {
+      const res = await apiFetch(`/api/clips/${clipId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -109,7 +109,7 @@ export default function UploadDetailPage() {
   }
 
   async function getClipUrl(clipId: string): Promise<string | null> {
-    const res = await fetch(`${API_BASE}/api/clips/${clipId}/download`, { cache: "no-store" });
+    const res = await apiFetch(`/api/clips/${clipId}/download`, { cache: "no-store" });
     if (!res.ok) { setError(await res.text()); return null; }
     const data = await res.json();
     if (!data?.download_url) { setError("Missing download_url"); return null; }

@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 
@@ -25,7 +25,7 @@ export default function UploadPage() {
 
     try {
       setStatus("Requesting upload link…");
-      const res = await fetch(`${API_BASE}/api/uploads/create`, {
+      const res = await apiFetch(`/api/uploads/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -58,7 +58,7 @@ export default function UploadPage() {
       }
 
       setStatus("Finalizing…");
-      const completeRes = await fetch(`${API_BASE}/api/uploads/complete`, {
+      const completeRes = await apiFetch(`/api/uploads/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: data.upload_id }),

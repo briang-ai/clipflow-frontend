@@ -12,10 +12,11 @@ export default function ReelPlayerPage() {
 
   useEffect(() => {
     if (!reelId) return;
-    fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" })
+    // Same public endpoint as the share link, so this page works on any phone.
+    fetch(`${API_BASE}/api/reels/${reelId}/public`, { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
-        if (d?.download_url) setUrl(d.download_url);
+        if (d?.video_url) setUrl(d.video_url);
         else setError("Could not load reel.");
       })
       .catch(() => setError("Network error loading reel."));

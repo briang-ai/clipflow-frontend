@@ -2,7 +2,7 @@
 import { useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 export default function RecordFAB() {
   const { isLoaded, isSignedIn, user } = useUser();
@@ -51,7 +51,7 @@ export default function RecordFAB() {
       setStatus("Uploading…");
       setShowStatus(true);
 
-      const res = await fetch(`${API_BASE}/api/uploads/create`, {
+      const res = await apiFetch(`/api/uploads/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -74,7 +74,7 @@ export default function RecordFAB() {
       });
       if (!putRes.ok) { setStatus("Upload failed"); return; }
 
-      const completeRes = await fetch(`${API_BASE}/api/uploads/complete`, {
+      const completeRes = await apiFetch(`/api/uploads/complete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: data.upload_id }),

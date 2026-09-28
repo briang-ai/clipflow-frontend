@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { downloadVideo } from "@/lib/downloadVideo";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import Nav from "@/components/Nav";
 import RecordFAB from "@/components/RecordFAB";
 
@@ -75,7 +75,7 @@ async function fetchReelsForUploads(uploadIds: string[]): Promise<Record<string,
   await Promise.all(
     uploadIds.map(async id => {
       try {
-        const res = await fetch(`${API_BASE}/api/uploads/${id}/reels`, { cache: "no-store" });
+        const res = await apiFetch(`/api/uploads/${id}/reels`, { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         results[id] = data.reels ?? [];
@@ -90,7 +90,7 @@ async function fetchSummariesForUploads(uploadIds: string[]): Promise<Record<str
   await Promise.all(
     uploadIds.map(async id => {
       try {
-        const res = await fetch(`${API_BASE}/api/uploads/${id}/summary`, { cache: "no-store" });
+        const res = await apiFetch(`/api/uploads/${id}/summary`, { cache: "no-store" });
         if (!res.ok) return;
         results[id] = await res.json();
       } catch { /* silent */ }
@@ -104,7 +104,7 @@ async function fetchThumbnailsForUploads(uploadIds: string[]): Promise<Record<st
   await Promise.all(
     uploadIds.map(async id => {
       try {
-        const res = await fetch(`${API_BASE}/api/uploads/${id}/thumbnail`, { cache: "no-store" });
+        const res = await apiFetch(`/api/uploads/${id}/thumbnail`, { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (data.thumbnail_url) results[id] = data.thumbnail_url;
@@ -137,12 +137,12 @@ function UploadCard({
     if (!clipUrl && !loadingClip && u.status === "complete") {
       setLoadingClip(true);
       try {
-        const clipsRes = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
+        const clipsRes = await apiFetch(`/api/uploads/${u.id}/clips`, { cache: "no-store" });
         if (clipsRes.ok) {
           const data = await clipsRes.json();
           const firstClip = (data.clips ?? [])[0];
           if (firstClip) {
-            const dlRes = await fetch(`${API_BASE}/api/clips/${firstClip.id}/download`, { cache: "no-store" });
+            const dlRes = await apiFetch(`/api/clips/${firstClip.id}/download`, { cache: "no-store" });
             if (dlRes.ok) {
               const dlData = await dlRes.json();
               setClipUrl(dlData.download_url ?? null);
@@ -261,7 +261,7 @@ export default function UploadsPage() {
 
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
-    fetch(`${API_BASE}/api/uploads/recent?limit=50`, { cache: "no-store" })
+    apiFetch(`/api/uploads/recent?limit=50`, { cache: "no-store" })
       .then(r => r.json()).then(d => setUploads(d.uploads ?? []))
       .catch(e => setError(`Network error: ${String(e)}`));
   }, [isLoaded, isSignedIn]);
@@ -292,7 +292,7 @@ export default function UploadsPage() {
       const allHitClipIds: string[] = [];
       await Promise.all(group.map(async u => {
         try {
-          const res = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
+          const res = await apiFetch(`/api/uploads/${u.id}/clips`, { cache: "no-store" });
           if (!res.ok) return;
           const data = await res.json();
           const hits = (data.clips ?? []).filter((c: any) => c.is_hit === true).map((c: any) => c.id);
@@ -300,7 +300,7 @@ export default function UploadsPage() {
         } catch { /* silent */ }
       }));
       if (!allHitClipIds.length) { setCompileError("No hit clips found. Try uploading more game footage."); setCompilingGroup(""); return; }
-      const res = await fetch(`${API_BASE}/api/reels/compile`, {
+      const res = await apiFetch(`/api/reels/compile`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ upload_id: group[0].id, clip_ids: allHitClipIds, watermark: true, mode }),
       });
@@ -332,9 +332,9 @@ export default function UploadsPage() {
     setDeletingIds(prev => new Set([...prev, ...uploadIds]));
     try {
       if (uploadIds.length === 1) {
-        await fetch(`${API_BASE}/api/uploads/${uploadIds[0]}`, { method: "DELETE" });
+        await apiFetch(`/api/uploads/${uploadIds[0]}`, { method: "DELETE" });
       } else {
-        await fetch(`${API_BASE}/api/uploads/bulk`, {
+        await apiFetch(`/api/uploads/bulk`, {
           method: "DELETE", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ upload_ids: uploadIds }),
         });
@@ -349,7 +349,7 @@ export default function UploadsPage() {
   }
 
   async function getReelUrl(reelId: string): Promise<string | null> {
-    const res = await fetch(`${API_BASE}/api/reels/${reelId}/download`, { cache: "no-store" });
+    const res = await apiFetch(`/api/reels/${reelId}/download`, { cache: "no-store" });
     if (!res.ok) { setCompileError(await res.text()); return null; }
     return (await res.json())?.download_url ?? null;
   }
@@ -372,7 +372,7 @@ export default function UploadsPage() {
   async function deleteReel(reelId: string, uploadId: string) {
     setDeletingReelIds(prev => new Set([...prev, reelId]));
     try {
-      const res = await fetch(`${API_BASE}/api/reels/${reelId}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/reels/${reelId}`, { method: "DELETE" });
       if (!res.ok) { setCompileError(await res.text()); return; }
       setReelsByUpload(prev => ({ ...prev, [uploadId]: (prev[uploadId] ?? []).filter(r => r.id !== reelId) }));
     } catch (e: any) { setCompileError(`Delete failed: ${String(e)}`); }

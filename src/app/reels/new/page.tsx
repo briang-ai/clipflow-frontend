@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import { API_BASE } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import Nav from "@/components/Nav";
 
 type UploadRow = {
@@ -80,7 +80,7 @@ function ClipCard({
     if (!clipUrl && !loadingClip) {
       setLoadingClip(true);
       try {
-        const res = await fetch(`${API_BASE}/api/clips/${clip.id}/download`, { cache: "no-store" });
+        const res = await apiFetch(`/api/clips/${clip.id}/download`, { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           setClipUrl(data.download_url ?? null);
@@ -188,7 +188,7 @@ export default function ReelsNewPage() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`${API_BASE}/api/uploads/recent?limit=100`, { cache: "no-store" });
+        const res = await apiFetch(`/api/uploads/recent?limit=100`, { cache: "no-store" });
         if (!res.ok) { setError("Failed to load uploads"); return; }
         const data = await res.json();
         const myUploads: UploadRow[] = (data.uploads ?? []).filter((u: UploadRow) => u.user_id === uid);
@@ -199,7 +199,7 @@ export default function ReelsNewPage() {
         const clipsMap: Record<string, ClipRow[]> = {};
         await Promise.all(myUploads.map(async u => {
           try {
-            const r = await fetch(`${API_BASE}/api/uploads/${u.id}/clips`, { cache: "no-store" });
+            const r = await apiFetch(`/api/uploads/${u.id}/clips`, { cache: "no-store" });
             if (!r.ok) return;
             const d = await r.json();
             clipsMap[u.id] = d.clips ?? [];
@@ -221,7 +221,7 @@ export default function ReelsNewPage() {
         await Promise.all(allClips.map(async clip => {
           if (!clip.thumbnail_s3_key) return;
           try {
-            const r = await fetch(`${API_BASE}/api/clips/${clip.id}/thumbnail`, { cache: "no-store" });
+            const r = await apiFetch(`/api/clips/${clip.id}/thumbnail`, { cache: "no-store" });
             if (!r.ok) return;
             const d = await r.json();
             if (d.thumbnail_url) thumbMap[clip.id] = d.thumbnail_url;
@@ -275,7 +275,7 @@ export default function ReelsNewPage() {
       const anchorUploadId = firstSelected?.upload_id;
       if (!anchorUploadId) { setError("Could not determine upload context."); return; }
 
-      const res = await fetch(`${API_BASE}/api/reels/compile`, {
+      const res = await apiFetch(`/api/reels/compile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
