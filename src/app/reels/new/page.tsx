@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/api";
+import { clipTitle } from "@/lib/clipLabels";
 import Nav from "@/components/Nav";
 
 type UploadRow = {
@@ -152,7 +153,7 @@ function ClipCard({
       </div>
       {/* Info */}
       <div style={{ padding: "8px 10px" }}>
-        <div style={{ fontSize: 11, color: "#666" }}>{clip.label || "Clip"}</div>
+        <div style={{ fontSize: 11, color: "#666" }}>{clipTitle(clip.label)}</div>
         {clip.ai_reason && (
           <div style={{ fontSize: 10, color: "#444", marginTop: 2, lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
             {clip.ai_reason}
@@ -448,4 +449,4 @@ export default function ReelsNewPage() {
       )}
     </>
   );
-}
+}

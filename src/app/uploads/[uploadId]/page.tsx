@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/api";
+import { clipStatus, clipTitle } from "@/lib/clipLabels";
 import { downloadVideo } from "@/lib/downloadVideo";
 import Nav from "@/components/Nav";
 import RecordFAB from "@/components/RecordFAB";
@@ -17,6 +18,7 @@ type ClipRow = {
   player_name?: string | null;
   jersey_number?: string | null;
   is_hit?: boolean | null;
+  is_swing?: boolean | null;
   ai_confidence?: number | null;
   ai_reason?: string | null;
   created_at: string;
@@ -108,6 +110,22 @@ export default function UploadDetailPage() {
     finally { setSavingId(""); }
   }
 
+  // The family's own call on a clip. Overrides the AI and moves the clip between sections.
+  async function markHit(clipId: string, isHit: boolean) {
+    try {
+      setError(""); setSavingId(clipId);
+      const res = await apiFetch(`/api/clips/${clipId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_hit: isHit }),
+      });
+      if (!res.ok) { setError(await res.text()); return; }
+      const data = await res.json();
+      setClips(prev => prev.map(c => c.id === clipId ? { ...c, ...data.clip } : c));
+    } catch (e: any) { setError(String(e)); }
+    finally { setSavingId(""); }
+  }
+
   async function getClipUrl(clipId: string): Promise<string | null> {
     const res = await apiFetch(`/api/clips/${clipId}/download`, { cache: "no-store" });
     if (!res.ok) { setError(await res.text()); return null; }
@@ -142,8 +160,10 @@ export default function UploadDetailPage() {
   if (!isLoaded)   return <div style={loadingStyle}>Loading…</div>;
   if (!isSignedIn) return <div style={loadingStyle}>Please sign in.</div>;
 
+  const isMaybe    = (c: ClipRow) => c.is_hit == null && (c.label ?? "").startsWith("maybe_");
   const hitClips   = clips.filter(c => c.is_hit === true);
-  const otherClips = clips.filter(c => c.is_hit !== true);
+  const maybeClips = clips.filter(isMaybe);
+  const otherClips = clips.filter(c => c.is_hit !== true && !isMaybe(c));
 
   return (
     <>
@@ -235,8 +255,24 @@ export default function UploadDetailPage() {
               <ClipCard key={c.id} c={c} draft={draft} setDraft={setDraft}
                 savingId={savingId} openingId={openingId}
                 downloadingId={downloadingId} downloadPct={downloadPct}
-                saveLabels={saveLabels} openClip={openClip}
+                saveLabels={saveLabels} openClip={openClip} markHit={markHit}
                 downloadClip={handleDownloadClip} isHit />
+            ))}
+          </>
+        )}
+
+        {maybeClips.length > 0 && (
+          <>
+            <div className="section-label">❓ Possible hits, please check ({maybeClips.length})</div>
+            <p style={{ color: "#888", fontSize: 13, margin: "-4px 0 12px", lineHeight: 1.5 }}>
+              Netting or other hitters nearby kept the AI from seeing these clearly. Tap Hit or Not a hit on each.
+            </p>
+            {maybeClips.map(c => (
+              <ClipCard key={c.id} c={c} draft={draft} setDraft={setDraft}
+                savingId={savingId} openingId={openingId}
+                downloadingId={downloadingId} downloadPct={downloadPct}
+                saveLabels={saveLabels} openClip={openClip} markHit={markHit}
+                downloadClip={handleDownloadClip} isHit={false} />
             ))}
           </>
         )}
@@ -248,7 +284,7 @@ export default function UploadDetailPage() {
               <ClipCard key={c.id} c={c} draft={draft} setDraft={setDraft}
                 savingId={savingId} openingId={openingId}
                 downloadingId={downloadingId} downloadPct={downloadPct}
-                saveLabels={saveLabels} openClip={openClip}
+                saveLabels={saveLabels} openClip={openClip} markHit={markHit}
                 downloadClip={handleDownloadClip} isHit={false} />
             ))}
           </>
@@ -262,13 +298,14 @@ export default function UploadDetailPage() {
   );
 }
 
-function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, downloadPct, saveLabels, openClip, downloadClip, isHit }: {
+function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, downloadPct, saveLabels, openClip, markHit, downloadClip, isHit }: {
   c: ClipRow;
   draft: Record<string, { player_name: string; jersey_number: string }>;
   setDraft: React.Dispatch<React.SetStateAction<Record<string, { player_name: string; jersey_number: string }>>>;
   savingId: string; openingId: string; downloadingId: string; downloadPct: number;
   saveLabels: (id: string) => void;
   openClip: (id: string) => void;
+  markHit: (id: string, isHit: boolean) => void;
   downloadClip: (id: string, label: string) => void;
   isHit: boolean;
 }) {
@@ -277,9 +314,9 @@ function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, down
     <div className={`clip-card${isHit ? " hit" : ""}`}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>{c.label || "Clip"}</div>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 8 }}>{clipTitle(c.label)}</div>
           <div style={{ fontSize: 13, color: "#888", marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span>{c.is_hit === true ? "✅ Hit" : c.is_hit === false ? "❌ Not a hit" : "🤷 Unscored"}</span>
+            <span>{clipStatus(c)}</span>
             {typeof c.ai_confidence === "number" && (
               <span style={{ padding: "2px 8px", borderRadius: 20, background: "#1a1a1a", border: "1px solid #2a2a2a", fontSize: 12, fontFamily: "monospace" }}>
                 {Math.round(c.ai_confidence * 100)}%
@@ -303,6 +340,22 @@ function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, down
         </div>
       </div>
 
+      {!(c.label === "full_clip" || (c.label ?? "").startsWith("part_")) && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+          <span style={{ fontSize: 13, color: "#888" }}>Your call:</span>
+          <button className="btn-secondary" aria-pressed={c.is_hit === true}
+            onClick={() => markHit(c.id, true)} disabled={savingId === c.id}
+            style={c.is_hit === true ? { borderColor: "#e8622c", color: "#e8622c" } : undefined}>
+            ✅ Hit
+          </button>
+          <button className="btn-secondary" aria-pressed={c.is_hit === false}
+            onClick={() => markHit(c.id, false)} disabled={savingId === c.id}
+            style={c.is_hit === false ? { borderColor: "#888", color: "#ddd" } : undefined}>
+            Not a hit
+          </button>
+        </div>
+      )}
+
       <div style={{ height: 1, background: "#222", margin: "14px 0" }} />
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
@@ -320,4 +373,4 @@ function ClipCard({ c, draft, setDraft, savingId, openingId, downloadingId, down
       </div>
     </div>
   );
-}
+}
